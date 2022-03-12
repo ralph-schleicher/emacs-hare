@@ -32,7 +32,9 @@
 
 (defgroup hare nil
   "Hare is a TortoiseSVN clone for Dired buffers."
-  :prefix "hare-")
+  :prefix "hare-"
+  :group 'vc
+  :group 'dired)
 
 (defsubst hare--vc-state (file-name)
   "Return the Hare VC state of FILE-NAME.
