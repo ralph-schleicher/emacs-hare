@@ -150,7 +150,6 @@ Value IMAGE is an image descriptor.")
 		 ;; Vertical position.
 		 (ascent (floor (* 100 (min 1 (/ (- ascent* margin)
 						 (float size)))))))
-	    (setq ascent 'center)
 	    (let ((image-load-path (cons 'hare-icon-directory image-load-path)))
 	      (mapcar (lambda (state)
 			(cons state (find-image
