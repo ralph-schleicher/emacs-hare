@@ -174,6 +174,7 @@ Value IMAGE is an image descriptor.")
 (cl-eval-when (:load-toplevel :execute)
   (hare--update-icon-alist))
 
+;;;###autoload
 (defun hare-update-icons ()
   "Update graphic icons."
   (interactive)
@@ -211,6 +212,7 @@ First argument SPEC is either a VC state, an image descriptor,
 		      cursor-intangible t)))
     icon))
 
+;;;###autoload
 (defun hare-list-vc-states ()
   (interactive)
   (hare-update-icons)
