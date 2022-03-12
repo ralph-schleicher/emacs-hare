@@ -143,7 +143,7 @@ Value IMAGE is an image descriptor.")
 		 (size (max 0 (if (<= width* height*)
 				  (- width* (* 2 margin*))
 				(- height* (* 2 margin*)
-				   (if (cl-oddp heigth*) 1 0)))))
+				   (if (cl-oddp height*) 1 0)))))
 		 (margin (/ (- width* size) 2))
 		 ;; Vertical position.
 		 (ascent (floor (* 100 (min 1 (/ (- ascent* margin)
