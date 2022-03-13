@@ -252,8 +252,19 @@ First argument SPEC is either a VC state, an image descriptor,
 	    (insert " ")))
 	(forward-line 1)))))
 
-(with-eval-after-load "dired"
-  (add-hook 'dired-after-readin-hook 'hare--dired-after-readin))
+;;;###autoload
+(define-minor-mode hare-dired-mode
+  "Toggle display of version control information in current Dired buffer.
+When this minor mode is enabled, version control information such as
+revision number and status are visualized."
+  :group 'hare
+  (unless (derived-mode-p 'dired-mode)
+    (error "Not a Dired buffer"))
+  (cond (hare-dired-mode
+	 (add-hook 'dired-after-readin-hook 'hare--dired-after-readin t t))
+	(t
+	 (remove-hook 'dired-after-readin-hook 'hare--dired-after-readin t)))
+  (dired-revert))
 
 (provide 'hare)
 
