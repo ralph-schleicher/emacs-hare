@@ -11,7 +11,7 @@ control interface.
 [[./doc/Screenshot1.png]]
 
 ** To Do
-- [ ] Add context menu to run version control commands.
+- [X] Add context menu to run version control commands.
 
 ** See Also
 - https://github.com/dgutov/diff-hl :: diff-hl-dired-mode
