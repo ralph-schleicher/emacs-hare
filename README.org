@@ -1,1 +1,5 @@
+#+STARTUP: inlineimages
+
 Work in progress.
+
+[[./doc/Screenshot1.png]]
