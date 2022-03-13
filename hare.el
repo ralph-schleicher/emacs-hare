@@ -231,6 +231,7 @@ First argument SPEC is either a VC state, an image descriptor,
 	    (insert " ")
 	    (hare--insert-image icon nil `(help-echo ,(cl-getf prop :help))))
 	  (insert " " (symbol-name state) "\n")))
+      (setq cursor-type nil)
       (setq truncate-lines t))))
 
 (defun hare--dired-after-readin ()
