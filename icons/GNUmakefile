@@ -44,6 +44,16 @@ yellow = \#D8AB00
 # Similar lightness than the primary colors.
 gray1 = \#6C6C6C
 
+color_theme = color
+ifeq ($(color_theme),color)
+relax = $(green)
+confirm = $(red)
+resolve = $(yellow)
+ignore = $(gray1)
+else # not color
+$(error unknown color theme ‘$(color_theme)’)
+endif # not color
+
 icon_set = outline
 ifeq ($(icon_set),outline)
 up_to_date = check-circle
@@ -92,43 +102,43 @@ clean:
 	rm -f *.svg *.png *.xpm
 
 up-to-date.svg: bootstrap.git/icons/$(up_to_date).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(green)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(relax)"/ }' $< > $@
 
 edited.svg: bootstrap.git/icons/$(edited).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(red)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(confirm)"/ }' $< > $@
 
 locked.svg: bootstrap.git/icons/$(locked).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(yellow)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(resolve)"/ }' $< > $@
 
 needs-update.svg: bootstrap.git/icons/$(needs_update).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(yellow)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(resolve)"/ }' $< > $@
 
 needs-merge.svg: bootstrap.git/icons/$(needs_merge).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(yellow)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(resolve)"/ }' $< > $@
 
 unlocked-changes.svg: bootstrap.git/icons/$(unlocked_changes).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(yellow)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(resolve)"/ }' $< > $@
 
 added.svg: bootstrap.git/icons/$(added).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(red)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(confirm)"/ }' $< > $@
 
 removed.svg: bootstrap.git/icons/$(removed).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(red)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(confirm)"/ }' $< > $@
 
 conflict.svg: bootstrap.git/icons/$(conflict).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(yellow)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(resolve)"/ }' $< > $@
 
 missing.svg: bootstrap.git/icons/$(missing).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(yellow)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(resolve)"/ }' $< > $@
 
 ignored.svg: bootstrap.git/icons/$(ignored).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(gray1)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(ignore)"/ }' $< > $@
 
 unregistered.svg: bootstrap.git/icons/$(unregistered).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(gray1)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(ignore)"/ }' $< > $@
 
 nil.svg: bootstrap.git/icons/$(nil).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(gray1)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(ignore)"/ }' $< > $@
 
 %.png: %.svg
 	inkscape -w 256 -h 256 -o $@ $< 2> /dev/null
