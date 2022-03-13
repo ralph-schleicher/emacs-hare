@@ -107,7 +107,7 @@ needs-merge.svg: bootstrap.git/icons/$(needs_merge).svg
 	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(yellow)"/ }' $< > $@
 
 unlocked-changes.svg: bootstrap.git/icons/$(unlocked_changes).svg
-	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(red)"/ }' $< > $@
+	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(yellow)"/ }' $< > $@
 
 added.svg: bootstrap.git/icons/$(added).svg
 	sed -Ee '1 { s/[ 	]+(width|height|class)="[^"]*"//g; s/fill="currentColor"/fill="$(red)"/ }' $< > $@
