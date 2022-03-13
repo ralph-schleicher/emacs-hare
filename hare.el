@@ -42,7 +42,10 @@
 Value is the VC state symbol as returned by the ‘vc-state’ function,
 or ‘locked’ if the VC state indicates that the file is locked by some
 other user."
-  (let ((state (vc-state file-name)))
+  (let* ((backend (vc-backend file-name))
+	 (state (if backend
+		    (vc-state-refresh file-name backend)
+		  (vc-state file-name))))
     (if (stringp state) 'locked state)))
 
 (defconst hare--vc-state-alist
