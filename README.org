@@ -1,5 +1,17 @@
 #+STARTUP: inlineimages
 
+* Hare
 Work in progress.
 
+At the end Hare should work similar to TortoiseSVN so that most
+version control operations can be performed directly in Dired, i.e.
+no need to switch between Dired and VC-Dir or any other version
+control interface.
+
 [[./doc/Screenshot1.png]]
+
+** To Do
+- [ ] Add context menu to run version control commands.
+
+** See Also
+- https://github.com/dgutov/diff-hl :: diff-hl-dired-mode
