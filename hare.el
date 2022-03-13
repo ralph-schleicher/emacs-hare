@@ -237,6 +237,33 @@ First argument SPEC is either a VC state, an image descriptor,
       (setq cursor-type nil)
       (setq truncate-lines t))))
 
+;;;; Dired Buffers
+
+(easy-menu-define hare--dired-menu ()
+  "Hare menu in Dired buffers."
+  '("Hare"
+    ["Update" vc-update
+     :help "Update the current file set"]
+    ["Check In/Out..." vc-next-action
+     :help "Do the next logical version control operation on the current file set"]
+    ["Diff" vc-diff
+     :help "Compare the current file set"]
+    ["Show Log" vc-print-log
+     :help "Display the change log of the current file set"]))
+
+(defun hare--dired-pop-up-menu ()
+  "Pop-up the Hare menu."
+  (interactive)
+  (popup-menu hare--dired-menu))
+
+(defvar hare--dired-icon-keymap
+  (let ((map (make-sparse-keymap)))
+    (define-key map [mouse-1] 'hare--dired-pop-up-menu)
+    (define-key map [mouse-2] 'hare--dired-pop-up-menu)
+    (define-key map [mouse-3] 'hare--dired-pop-up-menu)
+    map)
+  "Keymap for Hare icons.")
+
 (defun hare--dired-after-readin ()
   "Enrich the Dired buffer with Hare data."
   (save-excursion
@@ -247,11 +274,14 @@ First argument SPEC is either a VC state, an image descriptor,
 	  (let* ((file (dired-get-filename nil t))
       		 (state (and file (hare--vc-state file))))
 	    (if (hare--display-graphic-p)
-		(hare--insert-image state)
+		(hare--insert-image
+		 state nil `(keymap ,hare--dired-icon-keymap))
 	      (let ((prop (cdr (assq state hare--vc-state-alist)))
 		    (mark (point)))
 		(insert (cl-getf prop :flag))
-		(put-text-property mark (point) 'help-echo (cl-getf prop :help))))
+		(add-text-properties
+		 mark (point) `(help-echo ,(cl-getf prop :help)
+				keymap ,hare--dired-icon-keymap))))
 	    (insert " ")))
 	(forward-line 1)))))
 
