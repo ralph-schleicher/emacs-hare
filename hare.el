@@ -240,6 +240,16 @@ First argument SPEC is either a VC state, an image descriptor,
 
 ;;;; Dired Buffers
 
+(defcustom hare-dired-hide-vc-headers "^\\(working directory\\):"
+  "Whether or not to hide VC header lines in Dired buffers.
+A value of t means to omit the header lines, nil means to display the
+header lines.  A regular expression means to remove matching header
+lines."
+  :type '(choice (const :tag "All" t)
+		 (const :tag "None" nil)
+		 (regexp :tag "Lines matching"))
+  :group 'hare)
+
 (easy-menu-define hare--dired-menu ()
   "Hare menu in Dired buffers."
   '("Hare"
@@ -270,13 +280,51 @@ First argument SPEC is either a VC state, an image descriptor,
   (set (make-local-variable 'vc-dir-backend)
        (ignore-errors
 	 (vc-responsible-backend default-directory)))
-  (save-excursion
-    (let ((buffer-read-only nil))
+  (let ((buffer-read-only nil)
+	(case-fold-search t))
+    (save-excursion
       (goto-char (point-min))
-      (when vc-dir-backend
+      (when (and vc-dir-backend (not (eq hare-dired-hide-vc-headers t)))
 	;; See ‘dired-subdir-alist’.
 	(insert-before-markers
-	 (vc-dir-headers vc-dir-backend default-directory) "\n"))
+	 "Version control system: " (format "%s" vc-dir-backend) "\n"
+	 ;; The VC working directory information is redundant since
+	 ;; it is equal to the top-level Dired directory header.
+	 "Working directory: " (abbreviate-file-name default-directory) "\n"
+	 (if-let ((headers (vc-call-backend vc-dir-backend
+					    'dir-extra-headers
+					    default-directory)))
+	     (concat (replace-regexp-in-string " +:" ":" headers) "\n")
+	   "")
+	 "\n")
+	(when (stringp hare-dired-hide-vc-headers)
+	  (save-excursion
+	    (save-restriction
+	      (narrow-to-region (point-min) (1- (point)))
+	      (goto-char (point-min))
+	      (while (re-search-forward hare-dired-hide-vc-headers nil t)
+		(delete-region (save-excursion
+				 (goto-char (match-beginning 0))
+				 (forward-line 0)
+				 (point))
+			       (progn
+				 (forward-line 1)
+				 (point)))))))
+	(if (= (point-min) (1- (point)))
+	    (delete-region (point-min) (point))
+	  ;; Some headers remain.  Protect them from Dired font lock
+	  ;; changes.  Add support for ‘dired-hide-details-mode’, too.
+	  (set-text-properties (point-min) (point)
+			       '(font-lock-face default
+				 invisible dired-hide-details-information))
+	  ;; Highlight the header names.
+	  (let ((limit (point)))
+	    (goto-char (point-min))
+	    (while (re-search-forward "^[^:]+:" limit t)
+	      (add-text-properties (match-beginning 0) (match-end 0)
+				   `(face ,dired-header-face
+				     font-lock-face ,dired-header-face)))
+	    (goto-char limit))))
       (while (not (eobp))
 	(when (dired-move-to-filename)
 	  (let* ((file (dired-get-filename nil t))
