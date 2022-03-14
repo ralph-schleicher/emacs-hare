@@ -28,6 +28,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'vc-dir)
 (require 'dired)
 
 (defgroup hare nil
@@ -266,9 +267,16 @@ First argument SPEC is either a VC state, an image descriptor,
 
 (defun hare--dired-after-readin ()
   "Enrich the Dired buffer with Hare data."
+  (set (make-local-variable 'vc-dir-backend)
+       (ignore-errors
+	 (vc-responsible-backend default-directory)))
   (save-excursion
     (let ((buffer-read-only nil))
       (goto-char (point-min))
+      (when vc-dir-backend
+	;; See ‘dired-subdir-alist’.
+	(insert-before-markers
+	 (vc-dir-headers vc-dir-backend default-directory) "\n"))
       (while (not (eobp))
 	(when (dired-move-to-filename)
 	  (let* ((file (dired-get-filename nil t))
