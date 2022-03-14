@@ -284,7 +284,8 @@ lines."
 	(case-fold-search t))
     (save-excursion
       (goto-char (point-min))
-      (when (and vc-dir-backend (not (eq hare-dired-hide-vc-headers t)))
+      (when (and (not (buffer-narrowed-p)) ;i.e. ‘dired-readin’, not ‘dired-insert-subdir’
+		 vc-dir-backend (not (eq hare-dired-hide-vc-headers t)))
 	;; See ‘dired-subdir-alist’.
 	(insert-before-markers
 	 "Version control system: " (format "%s" vc-dir-backend) "\n"
