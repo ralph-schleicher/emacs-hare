@@ -321,7 +321,7 @@ lines."
       (while (not (eobp))
 	(when (dired-move-to-filename)
 	  (let* ((file (dired-get-filename nil t))
-      		 (state (and file (hare--vc-state file))))
+      		 (state (and file vc-dir-backend (hare--vc-state file))))
 	    (if (hare--display-graphic-p)
 		(hare--insert-image
 		 state nil `(keymap ,hare--dired-icon-keymap))
