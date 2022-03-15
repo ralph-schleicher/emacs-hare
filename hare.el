@@ -250,22 +250,12 @@ lines."
 		 (regexp :tag "Lines matching"))
   :group 'hare)
 
-(easy-menu-define hare--dired-menu ()
-  "Hare menu in Dired buffers."
-  '("Hare"
-    ["Update" vc-update
-     :help "Update the current file set"]
-    ["Check In/Out..." vc-next-action
-     :help "Do the next logical version control operation on the current file set"]
-    ["Diff" vc-diff
-     :help "Compare the current file set"]
-    ["Show Log" vc-print-log
-     :help "Display the change log of the current file set"]))
-
 (defun hare--dired-pop-up-menu ()
   "Pop-up the Hare menu."
   (interactive)
-  (popup-menu hare--dired-menu))
+  (popup-menu (cl-case vc-dir-backend
+		(SVN hare--svn-menu)
+		(t   vc-menu-map))))
 
 (defvar hare--dired-icon-keymap
   (let ((map (make-sparse-keymap)))
@@ -355,6 +345,20 @@ revision number and status are visualized."
 	(t
 	 (remove-hook 'dired-after-readin-hook 'hare--dired-after-readin t)))
   (dired-revert))
+
+;;;; Subversion
+
+(easy-menu-define hare--svn-menu ()
+  "Hare menu for Subversion."
+  '("HareSVN"
+    ["Update" vc-update
+     :help "Update the current file set"]
+    ["Commit..." vc-push
+     :help "Commit the current file set"]
+    ["Diff" vc-diff
+     :help "Compare the current file set"]
+    ["Show Log" vc-print-log
+     :help "Display the change log of the current file set"]))
 
 (provide 'hare)
 
