@@ -43,10 +43,10 @@
 Value is the VC state symbol as returned by the ‘vc-state’ function,
 or ‘locked’ if the VC state indicates that the file is locked by some
 other user."
-  (let* ((backend (vc-backend file-name))
-	 (state (if backend
-		    (vc-state-refresh file-name backend)
-		  (vc-state file-name))))
+  (when-let* ((backend (or vc-dir-backend
+			   (ignore-errors
+			     (vc-responsible-backend file-name))))
+	      (state (vc-state-refresh file-name backend)))
     (if (stringp state) 'locked state)))
 
 (defconst hare--vc-state-alist
