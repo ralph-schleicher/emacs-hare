@@ -274,6 +274,7 @@ lines."
 	(case-fold-search t))
     (save-excursion
       (goto-char (point-min))
+      ;; Insert the VC header lines.
       (when (and (not (buffer-narrowed-p)) ;i.e. ‘dired-readin’, not ‘dired-insert-subdir’
 		 vc-dir-backend (not (eq hare-dired-hide-vc-headers t)))
 	;; See ‘dired-subdir-alist’.
@@ -316,6 +317,7 @@ lines."
 				   `(face ,dired-header-face
 				     font-lock-face ,dired-header-face)))
 	    (goto-char limit))))
+      ;; Insert the Hare icons.
       (while (not (eobp))
 	(when (dired-move-to-filename)
 	  (let* ((file (dired-get-filename nil t))
