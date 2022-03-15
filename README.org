@@ -1,9 +1,9 @@
 #+STARTUP: inlineimages
 
-* Hare
+* HareSVN
 Work in progress.
 
-At the end Hare should work similar to TortoiseSVN so that most
+At the end HareSVN should work similar to TortoiseSVN so that most
 version control operations can be performed directly in Dired, i.e.
 no need to switch between Dired and VC-Dir or any other version
 control interface.

@@ -32,13 +32,13 @@
 (require 'dired)
 
 (defgroup hare nil
-  "Hare is a TortoiseSVN clone for Dired buffers."
+  "HareSVN is a TortoiseSVN clone for Dired buffers."
   :prefix "hare-"
   :group 'vc
   :group 'dired)
 
 (defsubst hare--vc-state (file-name)
-  "Return the Hare VC state of FILE-NAME.
+  "Return the HareSVN VC state of FILE-NAME.
 
 Value is the VC state symbol as returned by the ‘vc-state’ function,
 or ‘locked’ if the VC state indicates that the file is locked by some
@@ -89,7 +89,7 @@ other user."
     (nil
      :help "no information"
      :flag ?-))
-  "Alist of Hare properties associated with a VC state.
+  "Alist of HareSVN properties associated with a VC state.
 List elements are cons cells of the form ‘(STATE . PROPERTIES)’.
 Key STATE is the VC state symbol as returned by the ‘vc-state’
  function, or ‘locked’ if the VC state indicates that the file
@@ -222,7 +222,7 @@ First argument SPEC is either a VC state, an image descriptor,
   (with-help-window "*VC States*"
     (with-current-buffer standard-output
       (erase-buffer)
-      (insert "List of Hare version control states.\n\n")
+      (insert "List of HareSVN version control states.\n\n")
       (dolist (cell hare--vc-state-alist)
 	(let* ((state (car cell))
 	       (prop (cdr cell))
@@ -251,7 +251,7 @@ lines."
   :group 'hare)
 
 (defun hare--dired-pop-up-menu ()
-  "Pop-up the Hare menu."
+  "Pop-up the HareSVN menu."
   (interactive)
   (popup-menu (cl-case vc-dir-backend
 		(SVN hare--svn-menu)
@@ -263,10 +263,10 @@ lines."
     (define-key map [mouse-2] 'hare--dired-pop-up-menu)
     (define-key map [mouse-3] 'hare--dired-pop-up-menu)
     map)
-  "Keymap for Hare icons.")
+  "Keymap for HareSVN icons.")
 
 (defun hare--dired-after-readin ()
-  "Enrich the Dired buffer with Hare data."
+  "Enrich the Dired buffer with HareSVN data."
   (set (make-local-variable 'vc-dir-backend)
        (ignore-errors
 	 (vc-responsible-backend default-directory)))
@@ -317,7 +317,7 @@ lines."
 				   `(face ,dired-header-face
 				     font-lock-face ,dired-header-face)))
 	    (goto-char limit))))
-      ;; Insert the Hare icons.
+      ;; Insert the HareSVN icons.
       (while (not (eobp))
 	(when (dired-move-to-filename)
 	  (let* ((file (dired-get-filename nil t))
@@ -351,7 +351,7 @@ revision number and status are visualized."
 ;;;; Subversion
 
 (easy-menu-define hare--svn-menu ()
-  "Hare menu for Subversion."
+  "HareSVN menu for Subversion."
   '("HareSVN"
     ["Update" vc-update
      :help "Update the current file set"]
