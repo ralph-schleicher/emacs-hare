@@ -30,6 +30,8 @@
 (require 'cl-lib)
 (require 'vc-dir)
 (require 'dired)
+(eval-when-compile
+  (require 'subr-x))
 
 (defgroup hare nil
   "HareSVN is a TortoiseSVN clone for Dired buffers."
@@ -249,6 +251,9 @@ lines."
 		 (const :tag "None" nil)
 		 (regexp :tag "Lines matching"))
   :group 'hare)
+
+;; Fix compiler warning.
+(defvar hare--svn-menu)
 
 (defun hare--dired-pop-up-menu ()
   "Pop-up the HareSVN menu."
