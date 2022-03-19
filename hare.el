@@ -32,6 +32,8 @@
 (require 'dired)
 (eval-when-compile
   (require 'subr-x))
+(eval-when-compile
+  (require 'wid-edit))
 
 (defgroup hare nil
   "HareSVN is a TortoiseSVN clone for Dired buffers."
@@ -353,10 +355,167 @@ revision number and status are visualized."
 	 (remove-hook 'dired-after-readin-hook 'hare--dired-after-readin t)))
   (dired-revert))
 
+;;;; Forms
+
+(defvar hare--temp-buffer-name "*HareSVN*"
+  "The buffer name for temporary HareSVN buffers.")
+
+(defvar hare--temp-buffer-action '(display-buffer-at-bottom)
+  "The buffer display action for temporary HareSVN buffers.")
+
+(defvar hare--temp-buffer-from nil
+  "The buffer from which a temporary HareSVN buffer originates.")
+
+(defun hare--temp-buffer-undertaker ()
+  "Function to run when a temporary HareSVN buffer is killed."
+  (when (buffer-live-p hare--temp-buffer-from)
+    (save-current-buffer
+      (pop-to-buffer hare--temp-buffer-from)))
+  (delete-windows-on (current-buffer))
+  (set-buffer-modified-p nil))
+
+(defun hare--temp-buffer-window ()
+  "Create a temporary HareSVN buffer and show it in a window.
+Does not change the selected window or the current buffer.
+
+Return value is the window displaying the buffer.  The buffer
+itself is empty."
+  (let ((come-from (current-buffer)))
+    (with-current-buffer-window
+	hare--temp-buffer-name hare--temp-buffer-action
+	(lambda (window _buffer)
+	  ;; Return the window object.
+	  window)
+      (set (make-local-variable 'hare--temp-buffer-from) come-from)
+      (set (make-local-variable 'kill-buffer-query-functions) nil)
+      (set (make-local-variable 'kill-buffer-hook)
+	   '(hare--temp-buffer-undertaker))
+      (current-buffer))))
+
+(defun hare--widget-value (widget)
+  "Like ‘widget-value’ but return nil if WIDGET is not a widget."
+  (when (widgetp widget)
+    (widget-value widget)))
+
+;; List of widget names, i.e. symbols binding a widget.
+(defvar hare--form-widget-names)
+
+(defmacro hare--form (widget-names &rest body)
+  "A simple forms, i.e. dialog box, framework."
+  (declare (indent 1))
+  (let ((window (gensym "window"))
+	(buffer (gensym "buffer")))
+    `(let* ((,window (hare--temp-buffer-window))
+	    (,buffer (window-buffer ,window)))
+       (select-window ,window)
+       (set-buffer ,buffer)
+       (set (make-local-variable 'hare--form-widget-names) ',widget-names)
+       (dolist (widget-name hare--form-widget-names)
+	 (set (make-local-variable widget-name) nil))
+       ,@body
+       (use-local-map widget-keymap)
+       (widget-setup)
+       ())))
+
+(defmacro hare--form-quit-button (label &rest body)
+  "Insert a push button into the form.
+When the button is pressed, the form will be destroyed.
+
+First argument LABEL is the value of the push button.
+The BODY is evaluated in an environment where the values
+ of the form's named widgets are bound to variables of the
+ same name."
+  (declare (indent 1))
+  `(widget-create 'push-button
+                  :notify (lambda (&rest _ignore)
+			    ,(if (null body)
+				 '(kill-buffer (current-buffer))
+			       `(let ((buffer hare--temp-buffer-from)
+				      (call-back (cl-list* 'lambda hare--form-widget-names ',body))
+				      (arguments (mapcar #'hare--widget-value
+							 (mapcar #'symbol-value
+								 hare--form-widget-names))))
+			          (kill-buffer (current-buffer))
+				  (when (buffer-live-p buffer)
+				    (set-buffer buffer))
+			          (apply call-back arguments))))
+                  ,@(when label (list label))))
+
+(defmacro hare--form-check-list (list-of-strings checked)
+  "Insert a check list into the form.
+
+First argument LIST-OF-STRINGS are the check list items.
+Second argument CHECKED determines the initial state of
+ the check list items."
+  (let ((widget (gensym "widget")))
+    `(let (,widget)
+       (unless (bolp)
+         (widget-insert "\n"))
+       (widget-insert "----------------------------------------\n")
+       (widget-insert "Check: ")
+       (widget-create 'push-button
+                      :notify (lambda (&rest _ignore)
+                                (dolist (button (widget-get ,widget :buttons))
+                                  (unless (widget-value button)
+                                    (widget-checkbox-action button))))
+                      "All")
+       (widget-insert " ")
+       (widget-create 'push-button
+                      :notify (lambda (&rest _ignore)
+                                (dolist (button (widget-get ,widget :buttons))
+                                  (when (widget-value button)
+                                    (widget-checkbox-action button))))
+                      "None")
+       (widget-insert "\n")
+       (widget-insert "\n")
+       (setq ,widget (apply #'widget-create 'checklist
+                            (mapcar (lambda (string)
+                                      `(item ,string))
+                                    ,list-of-strings)))
+       (widget-insert "----------------------------------------\n")
+       (let ((flag (not (null ,checked))))
+	 (dolist (button (widget-get ,widget :buttons))
+           (unless (eq (widget-value button) flag)
+             (widget-checkbox-action button))))
+       ,widget)))
+
 ;;;; Subversion
 
+(defun hare--svn-update (files)
+  "Run the ‘svn udpate’ command."
+  (let ((buffer (window-buffer (hare--temp-buffer-window))))
+    (vc-svn-command buffer 0 files "update")))
+
 (defun hare-svn-update ()
-  (interactive))
+  "Update your working copy."
+  (interactive)
+  ;; TODO: Consider calling ‘(vc-deduce-fileset t)’.
+  (let ((files (cond ((derived-mode-p 'dired-mode)
+		      (or (sort (delq nil (dired-map-over-marks
+					   (dired-get-filename nil t)
+					   nil))
+				#'string<)
+			  (list default-directory)))
+		     (t
+		      (when-let ((file (or buffer-file-name
+					   default-directory)))
+			(list file))))))
+    (if (null files)
+	(message "Nothing to do")
+      (hare--form (checked-files)
+	(widget-insert "Update your working copy.\n")
+	(widget-insert "\n")
+	(hare--form-quit-button "Cancel")
+	(widget-insert " ")
+	(setq point (point))
+	(hare--form-quit-button "Update"
+          (hare--svn-update checked-files))
+	(widget-insert "\n")
+	(widget-insert "\n")
+	(setq checked-files (hare--form-check-list files t))
+	(goto-char (point-min))
+	(widget-move 2)
+	()))))
 
 (defconst hare--svn-menu
   (let ((menu (make-sparse-keymap "HareSVN")))
