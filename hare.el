@@ -355,17 +355,16 @@ revision number and status are visualized."
 
 ;;;; Subversion
 
-(easy-menu-define hare--svn-menu ()
-  "HareSVN menu for Subversion."
-  '("HareSVN"
-    ["Update" vc-update
-     :help "Update the current file set"]
-    ["Commit..." vc-push
-     :help "Commit the current file set"]
-    ["Diff" vc-diff
-     :help "Compare the current file set"]
-    ["Show Log" vc-print-log
-     :help "Display the change log of the current file set"]))
+(defun hare-svn-update ()
+  (interactive))
+
+(defconst hare--svn-menu
+  (let ((menu (make-sparse-keymap "HareSVN")))
+    (bindings--define-key menu [hare-svn-update]
+      '(menu-item "Update" hare-svn-update
+		  :help "Update your working copy"))
+    menu)
+  "HareSVN menu for Subversion.")
 
 (provide 'hare)
 
