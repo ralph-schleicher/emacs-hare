@@ -34,6 +34,8 @@
   (require 'subr-x))
 (eval-when-compile
   (require 'wid-edit))
+(eval-when-compile
+  (require 'cus-edit))
 
 (defgroup hare nil
   "HareSVN is a TortoiseSVN clone for Dired buffers."
@@ -410,6 +412,7 @@ itself is empty."
 	    (,buffer (window-buffer ,window)))
        (select-window ,window)
        (set-buffer ,buffer)
+       (custom--initialize-widget-variables)
        (set (make-local-variable 'hare--form-widget-names) ',widget-names)
        (dolist (widget-name hare--form-widget-names)
 	 (set (make-local-variable widget-name) nil))
@@ -459,17 +462,18 @@ Second argument CHECKED determines the initial state of
                                 (dolist (button (widget-get ,widget :buttons))
                                   (unless (widget-value button)
                                     (widget-checkbox-action button))))
-                      "All")
+                      " All ")
        (widget-insert " ")
        (widget-create 'push-button
                       :notify (lambda (&rest _ignore)
                                 (dolist (button (widget-get ,widget :buttons))
                                   (when (widget-value button)
                                     (widget-checkbox-action button))))
-                      "None")
+                      " None ")
        (widget-insert "\n")
        (widget-insert "\n")
        (setq ,widget (apply #'widget-create 'checklist
+			    :entry-format " %b %v"
                             (mapcar (lambda (string)
                                       `(item ,string))
                                     ,list-of-strings)))
@@ -506,11 +510,12 @@ Second argument CHECKED determines the initial state of
       (hare--form (checked-files)
 	(widget-insert "Update your working copy.\n")
 	(widget-insert "\n")
-	(hare--form-quit-button "Cancel")
 	(widget-insert " ")
+	(hare--form-quit-button " Cancel ")
+	(widget-insert "  ")
 	(setq point (point))
-	(hare--form-quit-button "Update"
-          (hare--svn-update checked-files))
+	(hare--form-quit-button "   OK   "
+	  (hare--svn-update checked-files))
 	(widget-insert "\n")
 	(widget-insert "\n")
 	(setq checked-files (hare--form-check-list files t))
