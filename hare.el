@@ -360,7 +360,7 @@ revision number and status are visualized."
 (defvar hare--temp-buffer-name "*HareSVN*"
   "The buffer name for temporary HareSVN buffers.")
 
-(defvar hare--temp-buffer-action '(display-buffer-at-bottom)
+(defvar hare--temp-buffer-action '(display-buffer-below-selected)
   "The buffer display action for temporary HareSVN buffers.")
 
 (defvar hare--temp-buffer-from nil
