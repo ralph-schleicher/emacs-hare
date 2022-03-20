@@ -398,25 +398,69 @@ itself is empty."
   (when (widgetp widget)
     (widget-value widget)))
 
+(defvar hare--form-horizontal-line (make-string 72 ?─)
+  "Horizontal line object.
+
+Candidates for horizontal line characters are ‘─’ (U+2500, box drawings
+light horizontal) and ‘━’ (U+2501, box drawings heavy horizontal).")
+
+(defun hare--form-horizontal-line ()
+  "Insert a horizontal line."
+  (cond ((stringp hare--form-horizontal-line)
+	 (widget-insert hare--form-horizontal-line "\n"))
+	((characterp hare--form-horizontal-line)
+	 (widget-insert (make-string (- (window-text-width) 2) hare--form-horizontal-line) "\n"))))
+
 ;; List of widget names, i.e. symbols binding a widget.
 (defvar hare--form-widget-names)
 
-(defmacro hare--form (widget-names &rest body)
+(defmacro hare--form (widget-names documentation submit-form &rest body)
   "A simple forms, i.e. dialog box, framework."
-  (declare (indent 1))
+  (declare (indent 3))
   (let ((window (gensym "window"))
 	(buffer (gensym "buffer")))
     `(let* ((,window (hare--temp-buffer-window))
 	    (,buffer (window-buffer ,window)))
        (select-window ,window)
        (set-buffer ,buffer)
+       ;; Use the widget style of the customization engine.
        (custom--initialize-widget-variables)
+       ;; Bind the variables for the widget names.
        (set (make-local-variable 'hare--form-widget-names) ',widget-names)
        (dolist (widget-name hare--form-widget-names)
 	 (set (make-local-variable widget-name) nil))
+       ;; Prepare the local keymap.
+       (let ((map (make-sparse-keymap)))
+	 (set-keymap-parent map widget-keymap)
+	 (use-local-map map))
+       ;; Insert the documentation string.
+       (widget-insert ,documentation "\n" "\n")
+       ;; Insert the cancel and submit buttons.  There is an empty
+       ;; line before and after these buttons.
+       (widget-insert " ")
+       (let* ((button (hare--form-quit-button " Cancel "))
+	      (fire (lambda ()
+		      (interactive)
+		      (widget-item-action button))))
+	 (local-set-key (kbd "C-c C-q") fire)
+	 (local-set-key (kbd "C-c q") fire))
+       (widget-insert " " " ")
+       (let* ((button (hare--form-quit-button "   OK   "
+			,@(when submit-form (list submit-form))))
+	      (fire (lambda ()
+		      (interactive)
+		      (widget-item-action button))))
+	 (local-set-key (kbd "C-c C-c") fire)
+	 (local-set-key (kbd "C-c c") fire))
+       (widget-insert "\n" "\n")
+       (hare--form-horizontal-line)
+       ;; The body form.
        ,@body
-       (use-local-map widget-keymap)
+       ;; Prepare text entries.
        (widget-setup)
+       ;; Set focus on submit button.
+       (goto-char (point-min))
+       (widget-move 2)
        ())))
 
 (defmacro hare--form-quit-button (label &rest body)
@@ -453,7 +497,6 @@ Second argument CHECKED determines the initial state of
     `(let (,widget)
        (unless (bolp)
          (widget-insert "\n"))
-       (widget-insert "----------------------------------------\n")
        (widget-insert "Check: ")
        (widget-create 'push-button
                       :notify (lambda (&rest _ignore)
@@ -475,7 +518,7 @@ Second argument CHECKED determines the initial state of
                             (mapcar (lambda (string)
                                       `(item ,string))
                                     ,list-of-strings)))
-       (widget-insert "----------------------------------------\n")
+       (hare--form-horizontal-line)
        (let ((flag (not (null ,checked))))
 	 (dolist (button (widget-get ,widget :buttons))
            (unless (eq (widget-value button) flag)
@@ -506,19 +549,9 @@ Second argument CHECKED determines the initial state of
     (if (null files)
 	(message "Nothing to do")
       (hare--form (checked-files)
-	(widget-insert "Update your working copy.\n")
-	(widget-insert "\n")
-	(widget-insert " ")
-	(hare--form-quit-button " Cancel ")
-	(widget-insert "  ")
-	(setq point (point))
-	(hare--form-quit-button "   OK   "
-	  (hare--svn-update checked-files))
-	(widget-insert "\n")
-	(widget-insert "\n")
+	  "Update your working copy."
+	  (hare--svn-update checked-files)
 	(setq checked-files (hare--form-check-list files t))
-	(goto-char (point-min))
-	(widget-move 2)
 	()))))
 
 (defconst hare--svn-menu
