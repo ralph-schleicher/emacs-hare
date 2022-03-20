@@ -365,6 +365,7 @@ revision number and status are visualized."
 
 (defvar hare--temp-buffer-from nil
   "The buffer from which a temporary HareSVN buffer originates.")
+(put 'hare--temp-buffer-from 'permanent-local t)
 
 (defun hare--temp-buffer-undertaker ()
   "Function to run when a temporary HareSVN buffer is killed."
@@ -380,13 +381,13 @@ Does not change the selected window or the current buffer.
 
 Return value is the window displaying the buffer.  The buffer
 itself is empty."
-  (let ((come-from (current-buffer)))
+  (let ((came-from (current-buffer)))
     (with-current-buffer-window
 	hare--temp-buffer-name hare--temp-buffer-action
 	(lambda (window _buffer)
 	  ;; Return the window object.
 	  window)
-      (set (make-local-variable 'hare--temp-buffer-from) come-from)
+      (set (make-local-variable 'hare--temp-buffer-from) came-from)
       (set (make-local-variable 'kill-buffer-query-functions) nil)
       (set (make-local-variable 'kill-buffer-hook)
 	   '(hare--temp-buffer-undertaker))
