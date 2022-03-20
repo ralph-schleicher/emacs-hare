@@ -28,14 +28,12 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'vc-svn)
 (require 'vc-dir)
 (require 'dired)
-(eval-when-compile
-  (require 'subr-x))
-(eval-when-compile
-  (require 'wid-edit))
-(eval-when-compile
-  (require 'cus-edit))
+(require 'subr-x)
+(require 'wid-edit)
+(require 'cus-edit)
 
 (defgroup hare nil
   "HareSVN is a TortoiseSVN clone for Dired buffers."
