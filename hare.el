@@ -500,6 +500,10 @@ initialized as follows.
        (hare--form-horizontal-line)
        ;; The body form.
        ,@body
+       ,@(when body
+	   '((unless (bolp)
+	       (widget-insert "\n"))
+	     (hare--form-horizontal-line)))
        ;; Prepare text entries.
        (widget-setup)
        ;; Set focus on submit button.
@@ -566,7 +570,6 @@ Second argument CHECKED determines the initial state of
                             (mapcar (lambda (string)
                                       `(item ,string))
                                     ,list-of-strings)))
-       (hare--form-horizontal-line)
        (let ((flag (not (null ,checked))))
 	 (dolist (button (widget-get ,widget :buttons))
            (unless (eq (widget-value button) flag)
