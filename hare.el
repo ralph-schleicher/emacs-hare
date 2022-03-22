@@ -411,20 +411,64 @@ light horizontal) and ‘━’ (U+2501, box drawings heavy horizontal).")
 	((characterp hare--form-horizontal-line)
 	 (widget-insert (make-string (- (window-text-width) 2) hare--form-horizontal-line) "\n"))))
 
+(defvar hare--form-special '(default-directory)
+  "List of special variables for form buffers.")
+
 ;; List of widget names, i.e. symbols binding a widget.
 (defvar hare--form-widget-names)
 
 (defmacro hare--form (widget-names documentation submit-form &rest body)
-  "A simple forms, i.e. dialog box, framework."
+  "A simple form, i.e. dialog box, framework.
+
+First argument WIDGET-NAMES is a list of symbols.
+Second argument DOCUMENTATION is the documentation string.
+Third argument SUBMIT-FORM is the submit button call-back form.
+
+A form buffer is a temporary HareSVN buffer.  The form buffer is
+initialized as follows.
+
+   * The variables listed in ‘hare--form-special’ are copied to local
+     variables in the form buffer.  These variables are also available
+     in the environment of the submit button call-back form.
+
+   * Local variables for the symbols listed in WIDGET-NAMES are created
+     and initialized with nil.  These variables can be bound to widgets
+     in the body of the form.  The values of these widgets are then
+     available in the submit button call-back form.
+
+   * A local keymap is installed in the form buffer.  The parent of
+     this keymap is ‘widget-keymap’ so that the user can tab through
+     the widgets of the form.
+
+   * The documentation string is inserted at the beginning of the form
+     buffer.
+
+   * A cancel and submit push button is inserted.  Both buttons destory
+     the form buffer.  After the form buffer is destroyed, the submit
+     button evaluates SUBMIT-FORM in an environment where the values of
+     the form's named widgets are bound to variables of the same name.
+     The variables listed in ‘hare--form-special’ are also available in
+     this environment.
+
+   * The window containing the form buffer is selected and point,
+     i.e. the input focus, is on the submit push button."
   (declare (indent 3))
-  (let ((window (gensym "window"))
+  (let ((values (gensym "values"))
+	(window (gensym "window"))
 	(buffer (gensym "buffer")))
-    `(let* ((,window (hare--temp-buffer-window))
+    `(let* ((,values (mapcar #'symbol-value hare--form-special))
+	    (,window (hare--temp-buffer-window))
 	    (,buffer (window-buffer ,window)))
        (select-window ,window)
        (set-buffer ,buffer)
        ;; Use the widget style of the customization engine.
        (custom--initialize-widget-variables)
+       ;; Propagate the special variables.
+       (set (make-local-variable 'hare--form-special-symbols) hare--form-special)
+       (set (make-local-variable 'hare--form-special-values) ,values)
+       (cl-mapc (lambda (symbol value)
+		  (set (make-local-variable symbol) value))
+		hare--form-special-symbols hare--form-special-values)
        ;; Bind the variables for the widget names.
        (set (make-local-variable 'hare--form-widget-names) ',widget-names)
        (dolist (widget-name hare--form-widget-names)
@@ -477,10 +521,14 @@ The BODY is evaluated in an environment where the values
 			    ,(if (null body)
 				 '(kill-buffer (current-buffer))
 			       `(let ((buffer hare--temp-buffer-from)
-				      (call-back (cl-list* 'lambda hare--form-widget-names ',body))
-				      (arguments (mapcar #'hare--widget-value
-							 (mapcar #'symbol-value
-								 hare--form-widget-names))))
+				      (call-back (cl-list* 'lambda (nconc (copy-sequence
+									   hare--form-widget-names)
+									  hare--form-special-symbols)
+							   ',body))
+				      (arguments (nconc (mapcar #'hare--widget-value
+								(mapcar #'symbol-value
+									hare--form-widget-names))
+							hare--form-special-values)))
 			          (kill-buffer (current-buffer))
 				  (when (buffer-live-p buffer)
 				    (set-buffer buffer))
@@ -554,8 +602,67 @@ Second argument CHECKED determines the initial state of
 	(setq checked-files (hare--form-check-list files t))
 	()))))
 
+(defun hare--svn-cleanup (working-directory &rest options)
+  "Run the ‘svn cleanup’ command."
+  ())
+
+(defun hare-svn-cleanup ()
+  "Recursively clean up the working copy."
+  (interactive)
+  (if (null default-directory)
+      (message "Nothing to do")
+    (hare--form (cleanup unlock refresh externals unversioned ignored revert)
+	"Recursively clean up the working copy."
+	(hare--svn-cleanup default-directory ;see ‘hare--form-special’
+			   :cleanup cleanup
+			   :break-locks unlock
+			   :refresh-icons refresh
+			   :include-externals externals
+			   :delete-unversioned unversioned
+			   :delete-ignored ignored
+			   :revert revert)
+      (setq cleanup (widget-create 'checkbox
+				   :format " %[%v%] %t"
+				   :tag "Clean up working copy status"
+				   t))
+      (widget-insert "\n")
+      (setq unlock (widget-create 'checkbox
+				  :format " %[%v%] %t"
+				  :tag "Break write locks"
+				  t))
+      (widget-insert "\n")
+      (setq refresh (widget-create 'checkbox
+				   :format " %[%v%] %t"
+				   :tag "Refresh HareSVN icons"
+				   nil))
+      (widget-insert "\n")
+      (setq externals (widget-create 'checkbox
+				     :format " %[%v%] %t"
+				     :tag "Include externals"
+				     t))
+      (widget-insert "\n")
+      (setq unversioned (widget-create 'checkbox
+				       :format " %[%v%] %t"
+				       :tag "Delete unversioned files and directories"
+				       nil))
+      (widget-insert "\n")
+      (setq ignored (widget-create 'checkbox
+				   :format " %[%v%] %t"
+				   :tag "Delete ignored files and directories"
+				   nil))
+      (widget-insert "\n")
+      (setq revert (widget-create 'checkbox
+				  :format " %[%v%] %t"
+				  :tag "Revert all changes recursively"
+				  nil))
+      (widget-insert "\n")
+      ())))
+
 (defconst hare--svn-menu
   (let ((menu (make-sparse-keymap "HareSVN")))
+    (bindings--define-key menu [hare-svn-cleanup]
+      '(menu-item "Clean up..." hare-svn-cleanup
+		  :help "Recursively clean up the working copy"))
     (bindings--define-key menu [hare-svn-update]
       '(menu-item "Update" hare-svn-update
 		  :help "Update your working copy"))
