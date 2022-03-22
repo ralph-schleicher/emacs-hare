@@ -539,42 +539,41 @@ The BODY is evaluated in an environment where the values
 			          (apply call-back arguments))))
                   ,@(when label (list label))))
 
-(defmacro hare--form-check-list (list-of-strings checked)
+(defun hare--form-check-list (list-of-strings checked)
   "Insert a check list into the form.
 
 First argument LIST-OF-STRINGS are the check list items.
 Second argument CHECKED determines the initial state of
  the check list items."
-  (let ((widget (gensym "widget")))
-    `(let (,widget)
-       (unless (bolp)
-         (widget-insert "\n"))
-       (widget-insert "Check: ")
-       (widget-create 'push-button
-                      :notify (lambda (&rest _ignore)
-                                (dolist (button (widget-get ,widget :buttons))
-                                  (unless (widget-value button)
-                                    (widget-checkbox-action button))))
-                      " All ")
-       (widget-insert " ")
-       (widget-create 'push-button
-                      :notify (lambda (&rest _ignore)
-                                (dolist (button (widget-get ,widget :buttons))
-                                  (when (widget-value button)
-                                    (widget-checkbox-action button))))
-                      " None ")
-       (widget-insert "\n")
-       (widget-insert "\n")
-       (setq ,widget (apply #'widget-create 'checklist
-			    :entry-format " %b %v"
-                            (mapcar (lambda (string)
-                                      `(item ,string))
-                                    ,list-of-strings)))
-       (let ((flag (not (null ,checked))))
-	 (dolist (button (widget-get ,widget :buttons))
-           (unless (eq (widget-value button) flag)
-             (widget-checkbox-action button))))
-       ,widget)))
+  (let (widget)
+    (unless (bolp)
+      (widget-insert "\n"))
+    (widget-insert "Check: ")
+    (widget-create 'push-button
+                   :notify (lambda (&rest _ignore)
+                             (dolist (button (widget-get widget :buttons))
+                               (unless (widget-value button)
+                                 (widget-checkbox-action button))))
+                   " All ")
+    (widget-insert " ")
+    (widget-create 'push-button
+                   :notify (lambda (&rest _ignore)
+                             (dolist (button (widget-get widget :buttons))
+                               (when (widget-value button)
+                                 (widget-checkbox-action button))))
+                   " None ")
+    (widget-insert "\n")
+    (widget-insert "\n")
+    (setq widget (apply #'widget-create 'checklist
+			:entry-format " %b %v"
+                        (mapcar (lambda (string)
+                                  `(item ,string))
+                                list-of-strings)))
+    (let ((flag (not (null checked))))
+      (dolist (button (widget-get widget :buttons))
+        (unless (eq (widget-value button) flag)
+          (widget-checkbox-action button))))
+    widget))
 
 ;;;; Subversion
 
