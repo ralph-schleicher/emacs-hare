@@ -34,6 +34,7 @@
 (require 'subr-x)
 (require 'wid-edit)
 (require 'cus-edit)
+(require 'shell)
 
 (defgroup hare nil
   "HareSVN is a TortoiseSVN clone for Dired buffers."
@@ -578,6 +579,87 @@ Second argument CHECKED determines the initial state of
 
 ;;;; Subversion
 
+(defcustom hare-svn-interactive 'undefined
+  "Whether or not to run ‘svn’ commands in an interactive shell."
+  :type '(choice (const undefined) boolean)
+  :group 'hare)
+
+(defun hare--svn (buffer success targets command &rest options)
+  "Execute a ‘svn’ command."
+  (unless (listp vc-svn-global-switches)
+    (error "User option ‘vc-svn-global-switches’ is not a list, please fix it"))
+  (let ((shellp (if (eq hare-svn-interactive 'undefined)
+		    (setq hare-svn-interactive (not (member "--non-interactive" vc-svn-global-switches)))
+		  hare-svn-interactive)))
+    (save-selected-window
+      (with-current-buffer buffer
+	(if (not shellp)
+	    (let ((inhibit-read-only t)
+		  (arguments (append vc-svn-global-switches
+				     (when command (list command))
+				     options
+				     (cond ((listp targets)
+					    (mapcar #'expand-file-name targets))
+					   ((stringp targets)
+					    (list (expand-file-name targets)))))))
+	      ;; Show the command line.
+	      (unless (bobp)
+		(insert "\n"))
+	      (insert vc-svn-program)
+	      (dolist (argument arguments)
+		(insert ?\s argument))
+	      (insert "\n")
+	      (let ((status (ignore-errors
+			      (apply #'call-process vc-svn-program nil (list buffer t) t arguments))))
+		(unless (bolp)
+		  (insert "\n"))
+		(cond ((null status)
+		       (insert (propertize "Failure:" 'face 'error)
+			       " internal error"))
+		      ((> status success)
+		       (insert (propertize "Failure:" 'face 'error)
+			       (format " exit status %s" status)))
+		      (t
+		       (insert (propertize "Success:" 'face 'success)
+			       (format " exit status %s" status))))
+		(insert "\n")))
+	  ;; Interactive shell.
+	  (unless (derived-mode-p 'shell-mode)
+	    (setq buffer-read-only nil)
+	    (shell buffer))
+	  ;; Wait for the shell prompt and leave point after it.
+	  (let* ((process (get-buffer-process buffer))
+		 (last-output (process-mark process)))
+	    (save-excursion
+	      (goto-char last-output)
+	      ;; This is like ‘beginning-of-line’ but ignores
+	      ;; any text motion restrictions.
+	      (forward-line 0)
+	      (unless (looking-at shell-prompt-pattern)
+		(accept-process-output process)))
+	    ;; Leave point after the shell prompt.
+	    (goto-char last-output))
+	  ;; Insert the Subversion command.
+	  (insert (comint-quote-filename vc-svn-program))
+	  ;; Global options.
+	  (dolist (option vc-svn-global-switches)
+	    (insert ?\s option))
+	  ;; The ‘svn’ sub-command.
+	  (when command
+	    (insert ?\s command))
+	  ;; Sub-command options.
+	  (dolist (option options)
+	    (insert ?\s option))
+	  ;; Targets.
+	  (cond ((listp targets)
+		 (dolist (target targets)
+		   (insert ?\s (comint-quote-filename target))))
+		((stringp targets)
+		 (insert ?\s (comint-quote-filename targets))))
+	  ;; Run it.
+	  (comint-send-input nil t))
+	()))))
+
 (defun hare--svn-update (files)
   "Run the ‘svn udpate’ command."
   (let ((buffer (window-buffer (hare--temp-buffer-window))))
@@ -605,61 +687,74 @@ Second argument CHECKED determines the initial state of
 	(setq checked-files (hare--form-check-list files t))
 	()))))
 
-(defun hare--svn-cleanup (working-directory &rest options)
+(defun hare--svn-cleanup (targets &rest options)
   "Run the ‘svn cleanup’ command."
-  ())
+  (let ((remove-unversioned
+	 (when (plist-get options :remove-unversioned)
+	   "--remove-unversioned"))
+	(remove-ignored
+	 (when (plist-get options :remove-ignored)
+	   "--remove-ignored"))
+	(vacuum-pristines
+	 (when (plist-get options :vacuum-pristines)
+	   "--vacuum-pristines"))
+	(include-externals
+	 (when (plist-get options :include-externals)
+	   "--include-externals")))
+    (let ((buffer (window-buffer (hare--temp-buffer-window "*HareSVN Process*"))))
+      ;; The actual clean up command.
+      (when (plist-get options :cleanup)
+	(apply #'hare--svn buffer 0 targets "cleanup"
+	       (delq nil (list include-externals))))
+      ;; The alternative clean up command.
+      (when (or remove-unversioned remove-ignored vacuum-pristines)
+	(apply #'hare--svn buffer 0 targets "cleanup"
+	       (delq nil (list remove-unversioned
+			       remove-ignored
+			       vacuum-pristines
+			       include-externals))))
+      ())))
 
-(defun hare-svn-cleanup ()
+(defun hare-svn-cleanup (&optional arg)
   "Recursively clean up the working copy."
-  (interactive)
+  (interactive "P")
   (if (null default-directory)
       (message "Nothing to do")
-    (hare--form (cleanup unlock refresh externals unversioned ignored revert)
-	"Recursively clean up the working copy."
-	(hare--svn-cleanup default-directory ;see ‘hare--form-special’
-			   :cleanup cleanup
-			   :break-locks unlock
-			   :refresh-icons refresh
-			   :include-externals externals
-			   :delete-unversioned unversioned
-			   :delete-ignored ignored
-			   :revert revert)
-      (setq cleanup (widget-create 'checkbox
-				   :format " %[%v%] %t"
-				   :tag "Clean up working copy status"
-				   t))
-      (widget-insert "\n")
-      (setq unlock (widget-create 'checkbox
-				  :format " %[%v%] %t"
-				  :tag "Break write locks"
-				  t))
-      (widget-insert "\n")
-      (setq refresh (widget-create 'checkbox
-				   :format " %[%v%] %t"
-				   :tag "Refresh HareSVN icons"
-				   nil))
-      (widget-insert "\n")
-      (setq externals (widget-create 'checkbox
+    (let ((default-directory (file-name-as-directory (expand-file-name default-directory nil))))
+      (hare--form (cleanup unversioned ignored vacuum externals)
+	  "Recursively clean up the working copy."
+	  (hare--svn-cleanup default-directory ;see ‘hare--form-special’
+			     :cleanup cleanup
+			     :remove-unversioned unversioned
+			     :remove-ignored ignored
+			     :vacuum-pristines vacuum
+			     :include-externals externals)
+	(setq cleanup (widget-create 'checkbox
 				     :format " %[%v%] %t"
-				     :tag "Include externals"
+				     :tag "Clean up working copy status"
 				     t))
-      (widget-insert "\n")
-      (setq unversioned (widget-create 'checkbox
+	(widget-insert "\n" "\n")
+	(setq unversioned (widget-create 'checkbox
+					 :format " %[%v%] %t"
+					 :tag "Remove unversioned files and directories"
+					 nil))
+	(widget-insert "\n")
+	(setq ignored (widget-create 'checkbox
+				     :format " %[%v%] %t"
+				     :tag "Remove ignored files and directories"
+				     nil))
+	(widget-insert "\n")
+	(setq vacuum (widget-create 'checkbox
+				    :format " %[%v%] %t"
+				    :tag "Remove unreferenced original files from ‘.svn’ directory"
+				    nil))
+	(widget-insert "\n" "\n")
+	(setq externals (widget-create 'checkbox
 				       :format " %[%v%] %t"
-				       :tag "Delete unversioned files and directories"
+				       :tag "Include externals"
 				       nil))
-      (widget-insert "\n")
-      (setq ignored (widget-create 'checkbox
-				   :format " %[%v%] %t"
-				   :tag "Delete ignored files and directories"
-				   nil))
-      (widget-insert "\n")
-      (setq revert (widget-create 'checkbox
-				  :format " %[%v%] %t"
-				  :tag "Revert all changes recursively"
-				  nil))
-      (widget-insert "\n")
-      ())))
+	(widget-insert "\n")
+	()))))
 
 (defconst hare--svn-menu
   (let ((menu (make-sparse-keymap "HareSVN")))
