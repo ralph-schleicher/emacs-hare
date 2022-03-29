@@ -375,7 +375,7 @@ revision number and status are visualized."
   (delete-windows-on (current-buffer))
   (set-buffer-modified-p nil))
 
-(defun hare--temp-buffer-window ()
+(defun hare--temp-buffer-window (&optional buffer-name buffer-action)
   "Create a temporary HareSVN buffer and show it in a window.
 Does not change the selected window or the current buffer.
 
@@ -383,7 +383,8 @@ Return value is the window displaying the buffer.  The buffer
 itself is empty."
   (let ((came-from (current-buffer)))
     (with-current-buffer-window
-	hare--temp-buffer-name hare--temp-buffer-action
+	(or buffer-name hare--temp-buffer-name)
+	(or buffer-action hare--temp-buffer-action)
 	(lambda (window _buffer)
 	  ;; Return the window object.
 	  window)
@@ -457,7 +458,7 @@ initialized as follows.
 	(window (gensym "window"))
 	(buffer (gensym "buffer")))
     `(let* ((,values (mapcar #'symbol-value hare--form-special))
-	    (,window (hare--temp-buffer-window))
+	    (,window (hare--temp-buffer-window "*HareSVN Form*"))
 	    (,buffer (window-buffer ,window)))
        (select-window ,window)
        (set-buffer ,buffer)
