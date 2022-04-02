@@ -10,6 +10,11 @@ control interface.
 
 [[./doc/Screenshot1.png]]
 
+** Forms
+Subversion commands are invoked via descriptive dialogs.
+
+[[./doc/svn-update-form.png]]
+
 ** To Do
 - [X] Add context menu to run version control commands.
 
