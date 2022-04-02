@@ -968,6 +968,19 @@ Return true if the command succeeds."
     ;; Return value.
     status))
 
+(defun hare--svn-collect-targets ()
+  ;; TODO: Consider calling ‘(vc-deduce-fileset t)’.
+  (cond ((derived-mode-p 'dired-mode)
+	 (or (sort (delq nil (dired-map-over-marks
+			      (dired-get-filename nil t)
+			      nil))
+		   #'string<)
+	     (list default-directory)))
+	(t
+	 (when-let ((file (or buffer-file-name
+			      default-directory)))
+	   (list file)))))
+
 (defun hare--svn-update (targets &rest options)
   "Run the ‘svn udpate’ command."
   (hare--with-process-window (buffer '(svn-update))
@@ -990,17 +1003,7 @@ Return true if the command succeeds."
 (defun hare-svn-update (&optional arg)
   "Update your working copy."
   (interactive "P")
-  ;; TODO: Consider calling ‘(vc-deduce-fileset t)’.
-  (let ((files (cond ((derived-mode-p 'dired-mode)
-		      (or (sort (delq nil (dired-map-over-marks
-					   (dired-get-filename nil t)
-					   nil))
-				#'string<)
-			  (list default-directory)))
-		     (t
-		      (when-let ((file (or buffer-file-name
-					   default-directory)))
-			(list file))))))
+  (let ((files (hare--svn-collect-targets)))
     (if (null files)
 	(message "Nothing to do")
       (hare--form (targets revision depth set-depth accept force parents externals)
