@@ -577,6 +577,303 @@ Second argument CHECKED determines the initial state of
           (widget-checkbox-action button))))
     widget))
 
+(defun hare--form-svn-widget (type &rest options)
+  "Insert a Subversion widget into the form.
+Return value is the widget handle."
+  (declare (indent 1))
+  ;; See https://svnbook.red-bean.com/en/1.7/svn.ref.svn.html.
+  (cl-case type
+    (accept
+     (apply #'widget-create 'menu-choice
+	    :value 'postpone
+	    :tag "Accept"
+	    :format "%t %[ Value Menu %]: %v"
+	    :help-echo "Define the action for automatic conflict resolution"
+	    `((const
+	       :value postpone
+	       :format "%t\n%d"
+	       :menu-tag "Postpone"
+	       :doc "\
+Take no resolution action at all and instead allow the conflicts to be
+recorded for future resolution.")
+	      (const
+	       :value edit
+	       :format "%t\n%d"
+	       :menu-tag "Edit"
+	       :doc "\
+Open each conflicted file in a text editor for manual resolution of
+line-based conflicts.")
+	      (const
+	       :value launch
+	       :format "%t\n%d"
+	       :menu-tag "Launch"
+	       :doc "\
+Launch an interactive merge conflict resolution tool for each conflicted
+file.")
+	      (const
+	       :value base
+	       :format "%t\n%d"
+	       :menu-tag "Base"
+	       :doc "\
+Choose the file that was the (unmodified) ‘BASE’ revision before you
+tried to integrate changes from the server into your working copy.")
+	      (const
+	       :value working
+	       :format "%t\n%d"
+	       :menu-tag "Working"
+	       :doc "\
+Assuming that you've manually handled the conflict resolution, choose
+the version of the file as it currently stands in your working copy.")
+	      (const
+	       :value mine-full
+	       :format "%t\n%d"
+	       :menu-tag "Mine, Full"
+	       :doc "\
+Resolve conflicted files by preserving all local modifications and
+discarding all changes fetched from the server during the operation
+which caused the conflict.")
+	      (const
+	       :value theirs-full
+	       :format "%t\n%d"
+	       :menu-tag "Theirs, Full"
+	       :doc "\
+Resolve conflicted files by discarding all local modifications and
+integrating all changes fetched from the server during the operation
+which caused the conflict.")
+	      (const
+	       :value mine-conflict
+	       :format "%t\n%d"
+	       :menu-tag "Mine, Conflict"
+	       :doc "\
+Resolve conflicted files by preferring local modifications over the
+changes fetched from the server in conflicting regions of each file's
+content.")
+	      (const
+	       :value theirs-conflict
+	       :format "%t\n%d"
+	       :menu-tag "Theirs, Conflict"
+	       :doc "\
+Resolve conflicted files by preferring the changes fetched from the
+server over local modifications in conflicting regions of each file's
+content."))))
+    ((depth set-depth)
+     (let ((set-depth (eq type 'set-depth)))
+       ;; See https://svnbook.red-bean.com/en/1.7/svn.advanced.sparsedirs.html.
+       (apply #'widget-create 'menu-choice
+	      :tag (if set-depth "Set Depth" "Depth")
+	      :format "%t %[ Value Menu %]: %v"
+	      :help-echo (if set-depth
+			     "Change the scope (sticky depth) of a directory in the working copy"
+			   "Limit the scope of an operation")
+	      `((const
+		 :value nil
+		 :format "%t\n%d"
+		 :menu-tag "None"
+		 :doc ,(if set-depth
+			   "Don't change the scope (sticky depth) of a directory in the working copy."
+			 "Apply the default behavior of the operation."))
+		(const
+		 :value empty
+		 :format "%t\n%d"
+		 :menu-tag "Empty"
+		 :doc "\
+Include only the immediate target of the operation, not any of its file
+or directory children.")
+		(const
+		 :value files
+		 :format "%t\n%d"
+		 :menu-tag "Files"
+		 :doc "\
+Include the immediate target of the operation and any of its immediate
+file children.")
+		(const
+		 :value immediates
+		 :format "%t\n%d"
+		 :menu-tag "Immediates"
+		 :doc "\
+Include the immediate target of the operation and any of its immediate
+file or directory children.  The directory children will themselves be
+empty.")
+		(const
+		 :value infinity
+		 :format "%t\n%d"
+		 :menu-tag "Infinity"
+		 :doc "\
+Include the immediate target of the operation, its file and directory
+children, its children's children, and so on to full recursion.")
+		,@(when set-depth
+		    '((const
+		       :value exclude
+		       :format "%t\n%d"
+		       :menu-tag "Exclude"
+		       :doc "\
+Exclude the immediate target of the operation from the working copy.")))))))
+    (revision
+     ;; See https://svnbook.red-bean.com/en/1.7/svn.tour.revs.specifiers.html.
+     (apply #'widget-create 'menu-choice
+	    :tag "Revision"
+	    :format "%t %[ Value Menu %]: %v"
+	    :help-echo "Specify a revision"
+	    `((const
+	       :value nil
+	       :format "%t\n%h"
+	       :menu-tag "None"
+	       :doc "The revision is not specified.")
+	      (integer
+	       :value 1
+	       :format "%{%t%}: %v\n%h"
+	       :tag "Number"
+	       :size 10
+	       :valid-regexp "\\`[1-9][0-9]*\\'"
+	       :doc "The revision number.")
+	      (string
+	       :value ,(format-time-string "{%+4Y-%m-%d}" (time-add (current-time) (* 24 60 60)))
+	       :format "%{%t%}: %v\n%h"
+	       :tag "Date"
+	       :size 32 ;{YYYY-MM-DD hh:mm:ss.sss±hh:mm}
+	       :valid-regexp "\\`{[ 0-9TZ.:+-]+}\\'"
+	       :doc "The most recent revision in the repository as of that date.")
+	      (const
+	       :value HEAD
+	       :format "%t\n%h"
+	       :doc "The latest revision in the repository.")
+	      (const
+	       :value BASE
+	       :format "%t\n%h"
+	       :doc "The revision of an item in the working copy.")
+	      (const
+	       :value COMMITTED
+	       :format "%t\n%h"
+	       :doc "The revision of an item's last commit before or at ‘BASE’.")
+	      (const
+	       :value PREV
+	       :format "%t\n%h"
+	       :doc "The revision before ‘COMMITTED’."))))
+    ;; Generic widgets.
+    (toggle
+     ;; Should provide a :tag and optional :doc option.
+     (apply #'widget-create 'toggle
+	    :format (if (plist-get options :doc)
+			"%t: %[ %v %]\n%h"
+		      "%t: %[ %v %]\n")
+	    options))
+    (checkbox
+     ;; Should provide a :tag and/or :doc option.
+     (apply #'widget-create 'checkbox
+	    :format (if (plist-get options :doc)
+			(if (plist-get options :tag)
+			    " %[%v%] %t\n%h"
+			  " %[%v%] %h")
+		      " %[%v%] %t\n")
+	    options))
+    ))
+
+;;;; Process Buffer
+
+(defcustom hare-delete-process-window t
+  "Whether or not to delete the process window after an operation.
+This option only has an effect if the process succeeds."
+  :type '(choice (const :tag "Never" nil)
+		 (const :tag "Always" t)
+		 (set :tag "Conditions"
+		      ;; Subversion commands.
+		      (const svn-add)
+		      (const svn-auth)
+		      (const svn-blame)
+		      (const svn-cat)
+		      (const svn-changelist)
+		      (const svn-checkout)
+		      (const svn-cleanup)
+		      (const svn-commit)
+		      (const svn-copy)
+		      (const svn-delete)
+		      (const svn-diff)
+		      (const svn-export)
+		      (const svn-help)
+		      (const svn-import)
+		      (const svn-info)
+		      (const svn-list)
+		      (const svn-lock)
+		      (const svn-log)
+		      (const svn-merge)
+		      (const svn-mergeinfo)
+		      (const svn-mkdir)
+		      (const svn-move)
+		      (const svn-patch)
+		      (const svn-propdel)
+		      (const svn-propedit)
+		      (const svn-propget)
+		      (const svn-proplist)
+		      (const svn-propset)
+		      (const svn-relocate)
+		      (const svn-resolve)
+		      (const svn-resolved)
+		      (const svn-revert)
+		      (const svn-status)
+		      (const svn-switch)
+		      (const svn-unlock)
+		      (const svn-update)
+		      (const svn-upgrade)))
+  :group 'hare)
+
+(defcustom hare-delete-process-window-delay 3.0
+  "Time to wait in seconds before the process window is deleted."
+  :type 'number
+  :group 'hare)
+
+(defun hare--delete-process-window (buffer conditions)
+  "Delete the process window.
+
+First argument BUFFER is the process buffer.
+Second argument CONDITIONS is a list of symbols.
+
+This function acts according to the current values of the options
+‘hare-delete-process-window’ and ‘hare-delete-process-window-delay’."
+  (when (cond ((consp hare-delete-process-window)
+	       (cl-some (lambda (condition)
+			  (memq condition hare-delete-process-window))
+			conditions))
+	      (hare-delete-process-window))
+    (sit-for (max 0.2 hare-delete-process-window-delay))
+    (delete-windows-on buffer)))
+
+(cl-defmacro hare--with-process-window ((buffer-var &optional conditions) &body body)
+  "Pop-up the HareSVN process window and evaluate BODY.
+If BODY returns non-nil, delete the process window."
+  (declare (indent 1))
+  (let ((buffer (gensym "buffer"))
+	(status (gensym "status")))
+    `(let* ((,buffer (window-buffer (hare--temp-buffer-window "*HareSVN Process*")))
+	    ,@(when buffer-var `((,buffer-var ,buffer)))
+	    (,status (progn ,@body)))
+       (when ,status
+	 (hare--delete-process-window ,buffer ,conditions)
+	 (message "HareSVN process succeeded"))
+       ,status)))
+
+(defmacro hare--all-null (&rest forms)
+  "Return non-nil if all forms return nil.
+Without any form, value is true."
+  `(cl-every #'null (list ,@forms)))
+
+(defmacro hare--not-any-null (&rest forms)
+  "Return non-nil if all forms return non-nil.
+Without any form, value is true."
+  `(not (cl-some #'null (list ,@forms))))
+
+(defun hare--string (object)
+  "Return a string described by OBJECT."
+  (cl-typecase object
+    (string
+     object)
+    (character
+     (string object))
+    (symbol
+     (symbol-name object))
+    (t
+     (with-output-to-string
+       (princ object)))))
+
 ;;;; Subversion
 
 (defcustom hare-svn-interactive 'undefined
@@ -585,12 +882,14 @@ Second argument CHECKED determines the initial state of
   :group 'hare)
 
 (defun hare--svn (buffer success targets command &rest options)
-  "Execute a ‘svn’ command."
+  "Execute a ‘svn’ command.
+Return true if the command succeeds."
   (unless (listp vc-svn-global-switches)
     (error "User option ‘vc-svn-global-switches’ is not a list, please fix it"))
   (let ((shellp (if (eq hare-svn-interactive 'undefined)
 		    (setq hare-svn-interactive (not (member "--non-interactive" vc-svn-global-switches)))
-		  hare-svn-interactive)))
+		  hare-svn-interactive))
+	(status nil))
     (save-selected-window
       (with-current-buffer buffer
 	(if (not shellp)
@@ -609,20 +908,22 @@ Second argument CHECKED determines the initial state of
 	      (dolist (argument arguments)
 		(insert ?\s argument))
 	      (insert "\n")
-	      (let ((status (ignore-errors
-			      (apply #'call-process vc-svn-program nil (list buffer t) t arguments))))
-		(unless (bolp)
-		  (insert "\n"))
-		(cond ((null status)
-		       (insert (propertize "Failure:" 'face 'error)
-			       " internal error"))
-		      ((> status success)
-		       (insert (propertize "Failure:" 'face 'error)
-			       (format " exit status %s" status)))
-		      (t
-		       (insert (propertize "Success:" 'face 'success)
-			       (format " exit status %s" status))))
-		(insert "\n")))
+	      (setq status (ignore-errors
+			     (apply #'call-process vc-svn-program nil (list buffer t) t arguments)))
+	      (unless (bolp)
+		(insert "\n"))
+	      (cond ((null status)
+		     (insert (propertize "Failure:" 'face 'error)
+			     " internal error"))
+		    ((> status success)
+		     (insert (propertize "Failure:" 'face 'error)
+			     (format " exit status %s" status))
+		     ;; Clear return value.
+		     (setq status nil))
+		    (t
+		     (insert (propertize "Success:" 'face 'success)
+			     (format " exit status %s" status))))
+	      (insert "\n"))
 	  ;; Interactive shell.
 	  (unless (derived-mode-p 'shell-mode)
 	    (setq buffer-read-only nil)
@@ -658,16 +959,32 @@ Second argument CHECKED determines the initial state of
 		 (insert ?\s (comint-quote-filename targets))))
 	  ;; Run it.
 	  (comint-send-input nil t))
-	()))))
+	()))
+    ;; Return value.
+    status))
 
-(defun hare--svn-update (files)
+(defun hare--svn-update (targets &rest options)
   "Run the ‘svn udpate’ command."
-  (let ((buffer (window-buffer (hare--temp-buffer-window))))
-    (vc-svn-command buffer 0 files "update")))
+  (hare--with-process-window (buffer '(svn-update))
+    (apply #'hare--svn buffer 0 targets "update"
+	   (nconc (when-let ((revision (plist-get options :revision)))
+		    (list "--revision" (hare--string revision)))
+		  (when-let ((depth (plist-get options :depth)))
+		    (list "--depth" (hare--string depth)))
+		  (when-let ((set-depth (plist-get options :set-depth)))
+		    (list "--set-depth" (hare--string set-depth)))
+		  (when-let ((accept (plist-get options :accept)))
+		    (list "--accept" (hare--string accept)))
+		  (when (plist-get options :force)
+		    (list "--force"))
+		  (when (plist-get options :parents)
+		    (list "--parents"))
+		  (when (plist-get options :ignore-externals)
+		    (list "--ignore-externals"))))))
 
-(defun hare-svn-update ()
+(defun hare-svn-update (&optional arg)
   "Update your working copy."
-  (interactive)
+  (interactive "P")
   ;; TODO: Consider calling ‘(vc-deduce-fileset t)’.
   (let ((files (cond ((derived-mode-p 'dired-mode)
 		      (or (sort (delq nil (dired-map-over-marks
@@ -681,10 +998,52 @@ Second argument CHECKED determines the initial state of
 			(list file))))))
     (if (null files)
 	(message "Nothing to do")
-      (hare--form (checked-files)
-	  "Update your working copy."
-	  (hare--svn-update checked-files)
-	(setq checked-files (hare--form-check-list files t))
+      (hare--form (targets revision depth set-depth accept force parents externals)
+	  "Update your working copy.
+
+Synchronize the working copy to the given revision.  If no revision is
+specified, synchronize the working copy to the latest revision in the
+repository."
+	  (hare--svn-update targets
+			    :revision revision
+			    :depth depth
+			    :set-depth set-depth
+			    :accept accept
+			    :force force
+			    :parents parents
+			    :ignore-externals externals)
+	(setq revision (hare--form-svn-widget 'revision))
+	(widget-insert "\n")
+	(setq depth (hare--form-svn-widget 'depth))
+	(widget-insert "\n")
+	(setq set-depth (hare--form-svn-widget 'set-depth))
+	(widget-insert "\n")
+	(setq accept (hare--form-svn-widget 'accept))
+	(widget-insert "\n")
+	(setq force (hare--form-svn-widget 'checkbox
+		      :doc "Handle unversioned obstructions as changes.
+If enabled, unversioned paths in the working copy do not automatically
+cause a failure if the update attempts to add the same path.  If the
+unversioned path is the same type (file or directory) as the path in
+the repository, it becomes versioned but its content is left as-is in
+the working copy.  This means that an obstructing directory's unversioned
+children may also obstruct and become versioned.  For files, any content
+differences between the obstruction and the repository are treated like
+a local modification to the working copy.  All properties from the
+repository are applied to the obstructing path."))
+	(widget-insert "\n")
+	(setq parents (hare--form-svn-widget 'checkbox
+			:doc "Create intermediate directories.
+If a target is missing in the working copy but its immediate parent
+directory is present, checkout the target into its parent directory
+at the specified depth.  If this option is enabled, create any missing
+parent directories of the target by checking them out at depth ‘empty’,
+too."))
+	(widget-insert "\n")
+	(setq externals (hare--form-svn-widget 'checkbox
+			  :doc "Ignore external definitions."))
+	(hare--form-horizontal-line)
+	(setq targets (hare--form-check-list files t))
 	()))))
 
 (defun hare--svn-cleanup (targets &rest options)
@@ -701,19 +1060,20 @@ Second argument CHECKED determines the initial state of
 	(include-externals
 	 (when (plist-get options :include-externals)
 	   "--include-externals")))
-    (let ((buffer (window-buffer (hare--temp-buffer-window "*HareSVN Process*"))))
-      ;; The actual clean up command.
-      (when (plist-get options :cleanup)
-	(apply #'hare--svn buffer 0 targets "cleanup"
-	       (delq nil (list include-externals))))
-      ;; The alternative clean up command.
-      (when (or remove-unversioned remove-ignored vacuum-pristines)
-	(apply #'hare--svn buffer 0 targets "cleanup"
-	       (delq nil (list remove-unversioned
-			       remove-ignored
-			       vacuum-pristines
-			       include-externals))))
-      ())))
+    (hare--with-process-window (buffer '(svn-cleanup))
+      (hare--all-null
+       ;; The actual clean up command.
+       (when (plist-get options :cleanup)
+	 (not (apply #'hare--svn buffer 0 targets "cleanup"
+		     (delq nil (list include-externals)))))
+       ;; The alternative clean up command.
+       (when (or remove-unversioned remove-ignored vacuum-pristines)
+	 (not (apply #'hare--svn buffer 0 targets "cleanup"
+		     (delq nil (list remove-unversioned
+				     remove-ignored
+				     vacuum-pristines
+				     include-externals)))))))
+    ()))
 
 (defun hare-svn-cleanup (&optional arg)
   "Recursively clean up the working copy."
@@ -729,31 +1089,23 @@ Second argument CHECKED determines the initial state of
 			     :remove-ignored ignored
 			     :vacuum-pristines vacuum
 			     :include-externals externals)
-	(setq cleanup (widget-create 'checkbox
-				     :format " %[%v%] %t"
-				     :tag "Clean up working copy status"
-				     t))
-	(widget-insert "\n" "\n")
-	(setq unversioned (widget-create 'checkbox
-					 :format " %[%v%] %t"
-					 :tag "Remove unversioned files and directories"
-					 nil))
+	(setq cleanup (hare--form-svn-widget 'checkbox
+			:doc "Clean up working copy status.
+Remove all write locks (shown as ‘L’ by the ‘svn status’ command) from
+the working copy.  Usually, this is only necessary if a Subversion client
+has crashed while using the working copy, leaving it in an unusable state."
+			:value t))
 	(widget-insert "\n")
-	(setq ignored (widget-create 'checkbox
-				     :format " %[%v%] %t"
-				     :tag "Remove ignored files and directories"
-				     nil))
+	(setq unversioned (hare--form-svn-widget 'checkbox
+			    :doc "Remove unversioned files and directories."))
+	(setq ignored (hare--form-svn-widget 'checkbox
+			:doc "Remove ignored files and directories."))
+	(setq vacuum (hare--form-svn-widget 'checkbox
+		       :doc "Remove unreferenced original files from ‘.svn’ directory."))
 	(widget-insert "\n")
-	(setq vacuum (widget-create 'checkbox
-				    :format " %[%v%] %t"
-				    :tag "Remove unreferenced original files from ‘.svn’ directory"
-				    nil))
-	(widget-insert "\n" "\n")
-	(setq externals (widget-create 'checkbox
-				       :format " %[%v%] %t"
-				       :tag "Include externals"
-				       nil))
-	(widget-insert "\n")
+	(setq externals (hare--form-svn-widget 'checkbox
+			  :doc "Include external definitions.
+Also operate on externals defined by ‘svn:externals’ properties."))
 	()))))
 
 (defconst hare--svn-menu
@@ -762,7 +1114,7 @@ Second argument CHECKED determines the initial state of
       '(menu-item "Clean up..." hare-svn-cleanup
 		  :help "Recursively clean up the working copy"))
     (bindings--define-key menu [hare-svn-update]
-      '(menu-item "Update" hare-svn-update
+      '(menu-item "Update..." hare-svn-update
 		  :help "Update your working copy"))
     menu)
   "HareSVN menu for Subversion.")
