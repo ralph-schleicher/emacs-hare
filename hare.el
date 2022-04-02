@@ -586,7 +586,7 @@ Return value is the widget handle."
     (accept
      (apply #'widget-create 'menu-choice
 	    :value 'postpone
-	    :tag "Accept"
+	    :tag "Conflict Resolution"
 	    :format "%t %[ Value Menu %]: %v"
 	    :help-echo "Define the action for automatic conflict resolution"
 	    `((const
@@ -660,7 +660,7 @@ content."))))
      (let ((set-depth (eq type 'set-depth)))
        ;; See https://svnbook.red-bean.com/en/1.7/svn.advanced.sparsedirs.html.
        (apply #'widget-create 'menu-choice
-	      :tag (if set-depth "Set Depth" "Depth")
+	      :tag (if set-depth "Set Sticky Depth" "Operational Depth")
 	      :format "%t %[ Value Menu %]: %v"
 	      :help-echo (if set-depth
 			     "Change the scope (sticky depth) of a directory in the working copy"
