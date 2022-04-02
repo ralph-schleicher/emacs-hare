@@ -507,6 +507,7 @@ initialized as follows.
 	       (widget-insert "\n"))
 	     (hare--form-horizontal-line)))
        ;; Prepare text entries.
+       (setq buffer-read-only nil)
        (widget-setup)
        ;; Set focus on submit button.
        (goto-char (point-min))
