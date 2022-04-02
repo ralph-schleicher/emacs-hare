@@ -232,14 +232,14 @@ First argument SPEC is either a VC state, an image descriptor,
 	(let* ((state (car cell))
 	       (prop (cdr cell))
 	       (icon (cdr (assq state hare--icon-alist))))
-	  (insert " ")
+	  (insert ?\s)
 	  (let ((mark (point)))
 	    (insert (cl-getf prop :flag))
 	    (put-text-property mark (point) 'help-echo (cl-getf prop :help)))
 	  (when (display-graphic-p)
-	    (insert " ")
+	    (insert ?\s)
 	    (hare--insert-image icon nil `(help-echo ,(cl-getf prop :help))))
-	  (insert " " (symbol-name state) "\n")))
+	  (insert ?\s (symbol-name state) ?\n)))
       (setq cursor-type nil)
       (setq truncate-lines t))))
 
@@ -287,16 +287,16 @@ lines."
 		 vc-dir-backend (not (eq hare-dired-hide-vc-headers t)))
 	;; See ‘dired-subdir-alist’.
 	(insert-before-markers
-	 "Version control system: " (format "%s" vc-dir-backend) "\n"
+	 "Version control system: " (format "%s" vc-dir-backend) ?\n
 	 ;; The VC working directory information is redundant since
 	 ;; it is equal to the top-level Dired directory header.
-	 "Working directory: " (abbreviate-file-name default-directory) "\n"
+	 "Working directory: " (abbreviate-file-name default-directory) ?\n
 	 (if-let ((headers (vc-call-backend vc-dir-backend
 					    'dir-extra-headers
 					    default-directory)))
 	     (concat (replace-regexp-in-string " +:" ":" headers) "\n")
 	   "")
-	 "\n")
+	 ?\n)
 	(when (stringp hare-dired-hide-vc-headers)
 	  (save-excursion
 	    (save-restriction
@@ -339,7 +339,7 @@ lines."
 		(add-text-properties
 		 mark (point) `(help-echo ,(cl-getf prop :help)
 				keymap ,hare--dired-icon-keymap))))
-	    (insert " ")))
+	    (insert ?\s)))
 	(forward-line 1)))))
 
 ;;;###autoload
@@ -409,9 +409,9 @@ light horizontal) and ‘━’ (U+2501, box drawings heavy horizontal).")
 (defun hare--form-horizontal-line ()
   "Insert a horizontal line."
   (cond ((stringp hare--form-horizontal-line)
-	 (widget-insert hare--form-horizontal-line "\n"))
+	 (insert hare--form-horizontal-line ?\n))
 	((characterp hare--form-horizontal-line)
-	 (widget-insert (make-string (- (window-text-width) 2) hare--form-horizontal-line) "\n"))))
+	 (insert (make-string (- (window-text-width) 2) hare--form-horizontal-line) ?\n))))
 
 (defvar hare--form-special '(default-directory)
   "List of special variables for form buffers.")
@@ -463,6 +463,8 @@ initialized as follows.
 	    (,buffer (window-buffer ,window)))
        (select-window ,window)
        (set-buffer ,buffer)
+       ;; Forms are editable.
+       (setq buffer-read-only nil)
        ;; Use the widget style of the customization engine.
        (custom--initialize-widget-variables)
        ;; Propagate the special variables.
@@ -479,35 +481,37 @@ initialized as follows.
        (let ((map (make-sparse-keymap)))
 	 (set-keymap-parent map widget-keymap)
 	 (use-local-map map))
-       ;; Insert the documentation string.
-       (widget-insert ,documentation "\n" "\n")
-       ;; Insert the cancel and submit buttons.  There is an empty
-       ;; line before and after these buttons.
-       (widget-insert " ")
-       (let* ((button (hare--form-quit-button " Cancel "))
-	      (fire (lambda ()
-		      (interactive)
-		      (widget-item-action button))))
-	 (local-set-key (kbd "C-c C-q") fire)
-	 (local-set-key (kbd "C-c q") fire))
-       (widget-insert " " " ")
-       (let* ((button (hare--form-quit-button "   OK   "
-			,@(when submit-form (list submit-form))))
-	      (fire (lambda ()
-		      (interactive)
-		      (widget-item-action button))))
-	 (local-set-key (kbd "C-c C-c") fire)
-	 (local-set-key (kbd "C-c c") fire))
-       (widget-insert "\n" "\n")
-       (hare--form-horizontal-line)
-       ;; The body form.
-       ,@body
-       ,@(when body
-	   '((unless (bolp)
-	       (widget-insert "\n"))
-	     (hare--form-horizontal-line)))
-       ;; Prepare text entries.
-       (setq buffer-read-only nil)
+       ;; Prepare the form.
+       (let ((inhibit-modification-hooks t))
+	 ;; Insert the documentation string.
+	 (insert ,documentation ?\n ?\n)
+	 ;; Insert the cancel and submit buttons.  There is an empty
+	 ;; line before and after these buttons.
+	 (insert ?\s)
+	 (let* ((button (hare--form-quit-button " Cancel "))
+       		(fire (lambda ()
+       			(interactive)
+       			(widget-item-action button))))
+           (local-set-key (kbd "C-c C-q") fire)
+           (local-set-key (kbd "C-c q") fire))
+	 (insert ?\s ?\s)
+	 (let* ((button (hare--form-quit-button "   OK   "
+       			  ,@(when submit-form (list submit-form))))
+       		(fire (lambda ()
+       			(interactive)
+       			(widget-item-action button))))
+           (local-set-key (kbd "C-c C-c") fire)
+           (local-set-key (kbd "C-c c") fire))
+	 (insert ?\n ?\n)
+	 (hare--form-horizontal-line)
+	 ;; The body form.
+	 ,@body
+	 ,@(when body
+             '((unless (bolp)
+       		 (insert ?\n))
+               (hare--form-horizontal-line))))
+       (set-buffer-modified-p nil)
+       ;; Prepare entry fields.
        (widget-setup)
        ;; Set focus on submit button.
        (goto-char (point-min))
@@ -550,23 +554,23 @@ Second argument CHECKED determines the initial state of
  the check list items."
   (let (widget)
     (unless (bolp)
-      (widget-insert "\n"))
-    (widget-insert "Check: ")
+      (insert ?\n))
+    (insert "Check: ")
     (widget-create 'push-button
                    :notify (lambda (&rest _ignore)
                              (dolist (button (widget-get widget :buttons))
                                (unless (widget-value button)
                                  (widget-checkbox-action button))))
                    " All ")
-    (widget-insert " ")
+    (insert ?\s)
     (widget-create 'push-button
                    :notify (lambda (&rest _ignore)
                              (dolist (button (widget-get widget :buttons))
                                (when (widget-value button)
                                  (widget-checkbox-action button))))
                    " None ")
-    (widget-insert "\n")
-    (widget-insert "\n")
+    (insert ?\n)
+    (insert ?\n)
     (setq widget (apply #'widget-create 'checklist
 			:entry-format " %b %v"
                         (mapcar (lambda (string)
@@ -904,15 +908,15 @@ Return true if the command succeeds."
 					    (list (expand-file-name targets)))))))
 	      ;; Show the command line.
 	      (unless (bobp)
-		(insert "\n"))
+		(insert ?\n))
 	      (insert vc-svn-program)
 	      (dolist (argument arguments)
 		(insert ?\s argument))
-	      (insert "\n")
+	      (insert ?\n)
 	      (setq status (ignore-errors
 			     (apply #'call-process vc-svn-program nil (list buffer t) t arguments)))
 	      (unless (bolp)
-		(insert "\n"))
+		(insert ?\n))
 	      (cond ((null status)
 		     (insert (propertize "Failure:" 'face 'error)
 			     " internal error"))
@@ -924,7 +928,7 @@ Return true if the command succeeds."
 		    (t
 		     (insert (propertize "Success:" 'face 'success)
 			     (format " exit status %s" status))))
-	      (insert "\n"))
+	      (insert ?\n))
 	  ;; Interactive shell.
 	  (unless (derived-mode-p 'shell-mode)
 	    (setq buffer-read-only nil)
@@ -1014,13 +1018,13 @@ repository."
 			    :parents parents
 			    :ignore-externals externals)
 	(setq revision (hare--form-svn-widget 'revision))
-	(widget-insert "\n")
+	(insert ?\n)
 	(setq depth (hare--form-svn-widget 'depth))
-	(widget-insert "\n")
+	(insert ?\n)
 	(setq set-depth (hare--form-svn-widget 'set-depth))
-	(widget-insert "\n")
+	(insert ?\n)
 	(setq accept (hare--form-svn-widget 'accept))
-	(widget-insert "\n")
+	(insert ?\n)
 	(setq force (hare--form-svn-widget 'checkbox
 		      :doc "Handle unversioned obstructions as changes.
 If enabled, unversioned paths in the working copy do not automatically
@@ -1032,7 +1036,7 @@ children may also obstruct and become versioned.  For files, any content
 differences between the obstruction and the repository are treated like
 a local modification to the working copy.  All properties from the
 repository are applied to the obstructing path."))
-	(widget-insert "\n")
+	(insert ?\n)
 	(setq parents (hare--form-svn-widget 'checkbox
 			:doc "Create intermediate directories.
 If a target is missing in the working copy but its immediate parent
@@ -1040,7 +1044,7 @@ directory is present, checkout the target into its parent directory
 at the specified depth.  If this option is enabled, create any missing
 parent directories of the target by checking them out at depth ‘empty’,
 too."))
-	(widget-insert "\n")
+	(insert ?\n)
 	(setq externals (hare--form-svn-widget 'checkbox
 			  :doc "Ignore external definitions."))
 	(hare--form-horizontal-line)
@@ -1096,14 +1100,14 @@ Remove all write locks (shown as ‘L’ by the ‘svn status’ command) from
 the working copy.  Usually, this is only necessary if a Subversion client
 has crashed while using the working copy, leaving it in an unusable state."
 			:value t))
-	(widget-insert "\n")
+	(insert ?\n)
 	(setq unversioned (hare--form-svn-widget 'checkbox
 			    :doc "Remove unversioned files and directories."))
 	(setq ignored (hare--form-svn-widget 'checkbox
 			:doc "Remove ignored files and directories."))
 	(setq vacuum (hare--form-svn-widget 'checkbox
 		       :doc "Remove unreferenced original files from ‘.svn’ directory."))
-	(widget-insert "\n")
+	(insert ?\n)
 	(setq externals (hare--form-svn-widget 'checkbox
 			  :doc "Include external definitions.
 Also operate on externals defined by ‘svn:externals’ properties."))
