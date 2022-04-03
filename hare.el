@@ -661,15 +661,43 @@ content.")
 Resolve conflicted files by preferring the changes fetched from the
 server over local modifications in conflicting regions of each file's
 content."))))
+    (auto-props
+     (apply #'widget-create 'menu-choice
+	    :value 'undefined
+	    :tag "Automatic Property Assignment"
+	    :format "%t %[ Value Menu %]: %v"
+	    :help-echo "Override the runtime configuration directive for automatic property assignment"
+	    `((const
+	       :value undefined
+	       :tag "not set"
+	       :format "%t\n%h"
+	       :menu-tag "Unset"
+	       :doc "Apply the runtime configuration setting.
+See the ‘enable-auto-props’ runtime configuration directive.")
+	      (const
+	       :value t
+	       :tag "enabled"
+	       :format "%t\n%h"
+	       :menu-tag "Enable"
+	       :doc "Enable automatic property assignment.
+Override the ‘enable-auto-props’ runtime configuration directive.")
+	      (const
+	       :value nil
+	       :tag "disabled"
+	       :format "%t\n%h"
+	       :menu-tag "Disable"
+	       :doc "Disable automatic property assignment.
+Override the ‘enable-auto-props’ runtime configuration directive."))))
     ((depth set-depth)
      (let ((set-depth (eq type 'set-depth)))
        ;; See https://svnbook.red-bean.com/en/1.7/svn.advanced.sparsedirs.html.
        (apply #'widget-create 'menu-choice
 	      :tag (if set-depth "Set Sticky Depth" "Operational Depth")
+	      :value (plist-get options :value)
 	      :format "%t %[ Value Menu %]: %v"
 	      :help-echo (if set-depth
 			     "Change the scope (sticky depth) of a directory in the working copy"
-			   "Limit the scope of an operation")
+			   "Limit the scope of the operation")
 	      `((const
 		 :value nil
 		 :format "%t\n%d"
@@ -968,7 +996,7 @@ Return true if the command succeeds."
     ;; Return value.
     status))
 
-(defun hare--svn-collect-targets ()
+(defun hare--svn-collect-targets (&rest options)
   ;; TODO: Consider calling ‘(vc-deduce-fileset t)’.
   (cond ((derived-mode-p 'dired-mode)
 	 (or (sort (delq nil (dired-map-over-marks
@@ -1083,6 +1111,67 @@ too."))
 				     include-externals)))))))
     ()))
 
+(defun hare--svn-add (targets &rest options)
+  "Run the ‘svn add’ command."
+  (hare--with-process-window (buffer '(svn-add))
+    (apply #'hare--svn buffer 0 targets "add"
+	   (nconc (when-let ((targets (plist-get options :targets)))
+		    (list "--targets" (hare--string targets)))
+		  (when-let ((depth (plist-get options :depth)))
+		    (list "--depth" (hare--string depth)))
+		  (when (plist-get options :no-ignore)
+		    (list "--no-ignore"))
+		  (when (plist-get options :auto-props)
+		    (list "--auto-props"))
+		  (when (plist-get options :no-auto-props)
+		    (list "--no-auto-props"))
+		  (when (plist-get options :force)
+		    (list "--force"))
+		  (when (plist-get options :parents)
+		    (list "--parents"))))))
+
+(defun hare-svn-add (&optional arg)
+  "Put files and directories under version control."
+  (interactive "P")
+  (let ((paths (hare--svn-collect-targets
+		:vc-state '(unregistered nil))))
+    (if (null paths)
+	(message "Nothing to do")
+      (hare--form (targets depth force no-ignore auto-props parents)
+	  "Put files and directories under version control."
+	  (hare--svn-add targets
+			 :depth depth
+			 :no-ignore no-ignore
+			 :auto-props (eq auto-props t)
+			 :no-auto-props (eq auto-props nil)
+			 :force force
+			 :parents parents)
+	(setq depth (hare--form-svn-widget 'depth
+		      :value 'empty))
+	(insert ?\n)
+	(setq no-ignore (hare--form-svn-widget 'checkbox
+			  :doc "Don't apply ignore rules to implicitly added items.
+Subversion uses ignore patterns to determine which items should be
+skipped as part of a larger recursive operation.  If this option is
+enabled, operate on all the files and directories present."))
+	(insert ?\n)
+	(setq auto-props (hare--form-svn-widget 'auto-props))
+	(insert ?\n)
+	(setq force (hare--form-svn-widget 'checkbox
+		      :value t
+		      :doc "Ignore already versioned paths.
+If this option is enabled, add all the unversioned paths and ignore
+the rest.  Otherwise, error out if a path is already versioned."))
+	(insert ?\n)
+	(setq parents (hare--form-svn-widget 'checkbox
+			:value t
+			:doc "Add intermediate directories.
+If this option is enabled, add any missing parent directories of the
+target at depth ‘empty’, too."))
+	(hare--form-horizontal-line)
+	(setq targets (hare--form-check-list paths t))
+	()))))
+
 (defun hare-svn-cleanup (&optional arg)
   "Recursively clean up the working copy."
   (interactive "P")
@@ -1121,6 +1210,9 @@ Also operate on externals defined by ‘svn:externals’ properties."))
     (bindings--define-key menu [hare-svn-cleanup]
       '(menu-item "Clean up..." hare-svn-cleanup
 		  :help "Recursively clean up the working copy"))
+    (bindings--define-key menu [hare-svn-add]
+      '(menu-item "Add..." hare-svn-add
+		  :help "Put files and directories under version control"))
     (bindings--define-key menu [hare-svn-update]
       '(menu-item "Update..." hare-svn-update
 		  :help "Update your working copy"))
