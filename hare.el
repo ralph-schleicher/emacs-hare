@@ -907,7 +907,138 @@ Without any form, value is true."
      (with-output-to-string
        (princ object)))))
 
+(defun hare--string-equal (string1 string2 &optional ignore-case)
+  "Return non-nil if STRING1 is equal to STRING2 in lexicographic order.
+Case is not significant if optional argument IGNORE-CASE is non-nil."
+  (let ((ans (compare-strings string1 0 nil string2 0 nil ignore-case)))
+    (eq ans t)))
+
+(defun hare--string-lessp (string1 string2 &optional ignore-case)
+  "Return non-nil if STRING1 is less than STRING2 in lexicographic order.
+Case is not significant if optional argument IGNORE-CASE is non-nil."
+  (let ((ans (compare-strings string1 0 nil string2 0 nil ignore-case)))
+    (and (numberp ans) (minusp ans))))
+
+(defvar hare--file-name-ignore-case (memq system-type '(ms-dos windows-nt))
+  "Whether or not to ignore case when comparing file names.")
+
+(defun hare--file-name-equal (name1 name2)
+  "Like ‘hare--string-equal’ but consider ‘hare--file-name-ignore-case’."
+  (hare--string-equal name1 name2 hare--file-name-ignore-case))
+
+(defun hare--file-name-lessp (name1 name2)
+  "Like ‘hare--string-lessp’ but consider ‘hare--file-name-ignore-case’."
+  (hare--string-lessp name1 name2 hare--file-name-ignore-case))
+
 ;;;; Subversion
+
+(defun hare--svn-collect-paths (&rest options)
+  "Collect paths, i.e. files and directories, for a Subversion command.
+Signal an error if not within a working copy.
+
+Return value is a list of the form ‘(ROOT PARENT CHILDREN)’.
+
+First element ROOT is the top-level working copy directory.
+Second element PARENT is the deepest version controlled working copy
+ directory containing CHILDREN.
+Third element CHILDREN is the list of child items.
+
+All file names are absolute."
+  (let (root parent children implicit-child)
+    ;; Collect absolute path names.  Expand file name abbreviations,
+    ;; like ‘~/foo’, and mark directory file names as directories.
+    (cond ((derived-mode-p 'dired-mode)
+	   (setq parent (file-name-as-directory (expand-file-name default-directory))
+		 children (delq nil (dired-map-over-marks
+				     ;; Expand ‘.’ and ‘..’ and mark directory
+				     ;; file names as directories.
+				     (when-let* ((relative (dired-get-filename t t))
+						 (absolute (expand-file-name relative parent)))
+				       (if (and (not (file-symlink-p absolute)) (file-directory-p absolute))
+					   (file-name-as-directory absolute)
+					 absolute))
+				     () nil t)))
+	   (cond ((eq (car children) t) ;one marked item
+		  (pop children))
+		 ((cdr children)) ;multiple marked items
+		 ((car children) ;no marked item, current line
+		  (setq implicit-child t))))
+	  (buffer-file-name
+	   (let ((path (expand-file-name buffer-file-name)))
+	     (setq parent (file-name-directory path)
+		   children (list path))))
+	  (default-directory
+	   (setq parent (file-name-as-directory (expand-file-name default-directory))))
+	  (t
+	   (error "Can not determine any path")))
+    ;; Check for Subversion working copy.
+    (setq root (vc-svn-root parent))
+    (when (null root)
+      (error "The directory ‘%s’ is not within a Subversion working copy" parent))
+    (setq root (file-name-as-directory (expand-file-name root)))
+    ;; TODO: Is this reasonable?  If so, shall the check be performed
+    ;; for all children?
+    (let ((backend (vc-responsible-backend parent)))
+      (unless (eq backend 'SVN)
+	(error "The directory ‘%s’ is part of a %s repository" parent backend)))
+    ;; Silently remove all children outside the working copy.
+    (let ((admin (file-name-as-directory (expand-file-name vc-svn-admin-directory root))))
+      (setq children (cl-delete-if (lambda (child)
+				     (or (hare--file-name-lessp child root)
+					 (string-prefix-p admin child hare--file-name-ignore-case)))
+				   children)))
+    ;; Sort children in ascending order.
+    (setq children (sort (cl-delete-duplicates
+			  children :test #'hare--file-name-equal)
+			 #'hare--file-name-lessp))
+    (when-let ((dir (and children (file-name-directory (car children)))))
+      (when (hare--file-name-lessp dir parent)
+	(setq parent dir)))
+    ;; If PARENT is not under version control, adjust the paths.
+    (let ((path parent))
+      (while (and (hare--file-name-lessp root parent)
+		  (memq (vc-state-refresh parent 'SVN) '(ignored unregistered nil)))
+	(setq parent (file-name-directory (directory-file-name parent))))
+      (when (and (hare--file-name-lessp parent path)
+		 (null children))
+	(setq children (list path))))
+    ;; If there are no children, operate on PARENT.
+    (when (null children)
+      (setq children (list parent)))
+    (when (and (null (cdr children))
+	       (plist-get options :directory-files)
+	       (hare--file-name-equal parent (car children)))
+      (setcdr children (sort (delq nil (mapcar (lambda (relative)
+						 (unless (hare--file-name-equal relative vc-svn-admin-directory)
+      						   (let ((absolute (expand-file-name relative parent)))
+						     (if (and (not (file-symlink-p absolute)) (file-directory-p absolute))
+							 (file-name-as-directory absolute)
+						       absolute))))
+					       (directory-files parent nil directory-files-no-dot-files-regexp t)))
+			     #'hare--file-name-lessp)))
+    ;; Apply filters.
+    (let ((filter (plist-get options :vc-state)))
+      (cond ((eq filter t)
+	     ;; Augment the paths with the VC state.
+	     (setq children (mapcar (lambda (child)
+				      (cons child (vc-state-refresh child 'SVN)))
+				    children)))
+	    ((consp filter)
+	     (let (list state)
+	       (if (not (eq (car filter) 'not))
+		   (dolist (child children)
+		     (setq state (vc-state-refresh child 'SVN))
+		     (when (memq state filter)
+		       (push (cons child state) list)))
+		 ;; Drop ‘not’.
+		 (setq filter (cdr filter))
+		 (dolist (child children)
+		   (setq state (vc-state-refresh child 'SVN))
+		   (when (not (memq state filter))
+		     (push (cons child state) list))))
+	       (setq children (nreverse list))))))
+    ;; Return values.
+    (list root parent children)))
 
 (defcustom hare-svn-interactive 'undefined
   "Whether or not to run ‘svn’ commands in an interactive shell."
@@ -996,19 +1127,6 @@ Return true if the command succeeds."
     ;; Return value.
     status))
 
-(defun hare--svn-collect-targets (&rest options)
-  ;; TODO: Consider calling ‘(vc-deduce-fileset t)’.
-  (cond ((derived-mode-p 'dired-mode)
-	 (or (sort (delq nil (dired-map-over-marks
-			      (dired-get-filename nil t)
-			      nil))
-		   #'string<)
-	     (list default-directory)))
-	(t
-	 (when-let ((file (or buffer-file-name
-			      default-directory)))
-	   (list file)))))
-
 (defun hare--svn-update (targets &rest options)
   "Run the ‘svn udpate’ command."
   (hare--with-process-window (buffer '(svn-update))
@@ -1031,8 +1149,9 @@ Return true if the command succeeds."
 (defun hare-svn-update (&optional arg)
   "Update your working copy."
   (interactive "P")
-  (let ((files (hare--svn-collect-targets)))
-    (if (null files)
+  (cl-multiple-value-bind (root parent children)
+      (cl-values-list (hare--svn-collect-paths))
+    (if (null children)
 	(message "Nothing to do")
       (hare--form (targets revision depth set-depth accept force parents externals)
 	  "Update your working copy.
@@ -1079,7 +1198,7 @@ too."))
 	(setq externals (hare--form-svn-widget 'checkbox
 			  :doc "Ignore external definitions."))
 	(hare--form-horizontal-line)
-	(setq targets (hare--form-check-list files t))
+	(setq targets (hare--form-check-list children t))
 	()))))
 
 (defun hare--svn-cleanup (targets &rest options)
@@ -1133,9 +1252,11 @@ too."))
 (defun hare-svn-add (&optional arg)
   "Put files and directories under version control."
   (interactive "P")
-  (let ((paths (hare--svn-collect-targets
-		:vc-state '(unregistered nil))))
-    (if (null paths)
+  (cl-multiple-value-bind (root parent children)
+      (cl-values-list (hare--svn-collect-paths
+		       :vc-state '(unregistered)
+		       :directory-files t))
+    (if (null children)
 	(message "Nothing to do")
       (hare--form (targets depth force no-ignore auto-props parents)
 	  "Put files and directories under version control."
@@ -1169,15 +1290,15 @@ the rest.  Otherwise, error out if a path is already versioned."))
 If this option is enabled, add any missing parent directories of the
 target at depth ‘empty’, too."))
 	(hare--form-horizontal-line)
-	(setq targets (hare--form-check-list paths t))
+	(setq targets (hare--form-check-list (mapcar #'car children) t))
 	()))))
 
 (defun hare-svn-cleanup (&optional arg)
   "Recursively clean up the working copy."
   (interactive "P")
-  (if (null default-directory)
-      (message "Nothing to do")
-    (let ((default-directory (file-name-as-directory (expand-file-name default-directory nil))))
+  (cl-multiple-value-bind (root)
+      (cl-values-list (hare--svn-collect-paths))
+    (let ((default-directory root))
       (hare--form (cleanup unversioned ignored vacuum externals)
 	  "Recursively clean up the working copy."
 	  (hare--svn-cleanup default-directory ;see ‘hare--form-special’
