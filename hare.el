@@ -402,6 +402,8 @@ light horizontal) and ‘━’ (U+2501, box drawings heavy horizontal).")
 
 (defvar hare--form-special '(default-directory)
   "List of special variables for form buffers.")
+(defvar hare--form-special-symbols)
+(defvar hare--form-special-values)
 
 ;; List of widget names, i.e. symbols binding a widget.
 (defvar hare--form-widget-names)
@@ -1265,10 +1267,10 @@ Return true if the command succeeds."
 		  (when (plist-get options :ignore-externals)
 		    (list "--ignore-externals"))))))
 
-(defun hare-svn-update (&optional arg)
+(defun hare-svn-update (&optional _arg)
   "Update your working copy."
   (interactive "P")
-  (cl-multiple-value-bind (root parent children)
+  (cl-multiple-value-bind (_root parent children)
       (cl-values-list (hare--svn-collect-paths))
     (if (null children)
 	(message "Nothing to do")
@@ -1368,10 +1370,10 @@ too."))
 		  (when (plist-get options :parents)
 		    (list "--parents"))))))
 
-(defun hare-svn-add (&optional arg)
+(defun hare-svn-add (&optional _arg)
   "Put files and directories under version control."
   (interactive "P")
-  (cl-multiple-value-bind (root parent children)
+  (cl-multiple-value-bind (_root parent children)
       (cl-values-list (hare--svn-collect-paths
 		       :vc-state '(unregistered)
 		       :directory-files t))
@@ -1412,7 +1414,7 @@ target at depth ‘empty’, too."))
 	(setq targets (hare--form-paths parent children t))
 	()))))
 
-(defun hare-svn-cleanup (&optional arg)
+(defun hare-svn-cleanup (&optional _arg)
   "Recursively clean up the working copy."
   (interactive "P")
   (cl-multiple-value-bind (root)
