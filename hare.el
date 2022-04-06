@@ -193,23 +193,20 @@ Value IMAGE is an image descriptor.")
   (hare--update-icon-alist)
   ())
 
-(defun hare--insert-image (spec &optional string text-properties)
-  "Insert an graphic icon into the current buffer at point.
-First argument SPEC is either a VC state, an image descriptor,
- or a list of image specifications."
-  (let* ((state (cond ((symbolp spec) spec)
-		      ((stringp spec) 'locked)
-		      (t t))) ;not nil
-	 (prop (cdr (assq state hare--vc-state-alist)))
-	 (icon (if (consp spec)
-		   (if (eq (car spec) 'image)
-		       spec
-		     (let ((image-load-path (cons 'hare-icon-directory image-load-path)))
-		       (find-image spec)))
-		 (cdr (assq state hare--icon-alist))))
-	 (mark (point)))
-    (insert (or string "  "))
-    (when-let ((help (cl-getf prop :help)))
+(defun hare--insert-icon (state &optional text-properties)
+  "Insert an VC state icon into the current buffer at point.
+First argument STATE is the VC state.
+Optional second argument TEXT-PROPERTIES are additional text properties."
+  (unless (memq state hare--vc-states)
+    (error "Unknown VC state ‘%s’" state))
+  (let ((prop (cdr (assq state hare--vc-state-alist)))
+	(icon (when (hare--display-graphic-p)
+		(cdr (assq state hare--icon-alist))))
+	(mark (point)))
+    (if (null icon)
+	(insert (plist-get prop :flag))
+      (insert "  "))
+    (when-let ((help (plist-get prop :help)))
       (put-text-property mark (point) 'help-echo help))
     (when text-properties
       (add-text-properties mark (point) text-properties))
@@ -218,7 +215,7 @@ First argument SPEC is either a VC state, an image descriptor,
        mark (point) `(display ,icon
 		      rear-nonsticky t
 		      cursor-intangible t)))
-    icon))
+    ()))
 
 ;;;###autoload
 (defun hare-list-vc-states ()
@@ -229,16 +226,15 @@ First argument SPEC is either a VC state, an image descriptor,
       (erase-buffer)
       (insert "List of HareSVN version control states.\n\n")
       (dolist (cell hare--vc-state-alist)
-	(let* ((state (car cell))
-	       (prop (cdr cell))
-	       (icon (cdr (assq state hare--icon-alist))))
+	(let ((state (car cell))
+	      (prop (cdr cell)))
 	  (insert ?\s)
-	  (let ((mark (point)))
-	    (insert (cl-getf prop :flag))
-	    (put-text-property mark (point) 'help-echo (cl-getf prop :help)))
+	  (let ((hare-display-icons nil))
+	    (hare--insert-icon state))
 	  (when (display-graphic-p)
 	    (insert ?\s)
-	    (hare--insert-image icon nil `(help-echo ,(cl-getf prop :help))))
+	    (let ((hare-display-icons t))
+	      (hare--insert-icon state)))
 	  (insert ?\s (symbol-name state) ?\n)))
       (setq cursor-type nil)
       (setq truncate-lines t))))
@@ -330,15 +326,7 @@ lines."
 	(when (dired-move-to-filename)
 	  (let* ((file (dired-get-filename nil t))
       		 (state (and file vc-dir-backend (hare--vc-state file))))
-	    (if (hare--display-graphic-p)
-		(hare--insert-image
-		 state nil `(keymap ,hare--dired-icon-keymap))
-	      (let ((prop (cdr (assq state hare--vc-state-alist)))
-		    (mark (point)))
-		(insert (cl-getf prop :flag))
-		(add-text-properties
-		 mark (point) `(help-echo ,(cl-getf prop :help)
-				keymap ,hare--dired-icon-keymap))))
+	    (hare--insert-icon state `(keymap ,hare--dired-icon-keymap))
 	    (insert ?\s)))
 	(forward-line 1)))))
 
@@ -546,41 +534,118 @@ The BODY is evaluated in an environment where the values
 			          (apply call-back arguments))))
                   ,@(when label (list label))))
 
-(defun hare--form-check-list (list-of-strings checked)
-  "Insert a check list into the form.
+(define-widget 'hare--form-path 'const
+  "A file name with optional VC state."
+  :format "%v\n"
+  :value-create 'hare--form-path-value-create
+  :hare-vc-state t ;not nil
+  :hare-file-name nil
+  :hare-folder-p nil)
 
-First argument LIST-OF-STRINGS are the check list items.
-Second argument CHECKED determines the initial state of
- the check list items."
-  (let (widget)
+(defun hare--form-path-value-create (widget)
+  "Insert the printed representation of the value."
+  (let ((value (widget-get widget :value))
+	(state (widget-get widget :hare-vc-state))
+	(path (widget-get widget :hare-file-name)))
+    (unless (eq state t)
+      (hare--insert-icon state)
+      (insert ?\s))
+    (if (null path)
+	(insert value)
+      (let ((mark (point)))
+	(insert path)
+	(put-text-property mark (point) 'help-echo value)))))
+
+(defun hare--form-paths (parent children checked)
+  "Insert a list of file names into the form.
+The user can select/deselect items interactively.
+
+First argument PARENT is the directory file name
+ containing CHILDREN.
+Second argument CHILDREN is the list of file names.
+Third argument CHECKED determines the initial state
+ of the check list items.
+
+Return value is a ‘checklist’ widget."
+  ;; This is a closure for the notification call-backs.
+  (let (checklist)
     (unless (bolp)
       (insert ?\n))
     (insert "Check: ")
     (widget-create 'push-button
                    :notify (lambda (&rest _ignore)
-                             (dolist (button (widget-get widget :buttons))
+                             (dolist (button (widget-get checklist :buttons))
                                (unless (widget-value button)
                                  (widget-checkbox-action button))))
                    " All ")
     (insert ?\s)
     (widget-create 'push-button
                    :notify (lambda (&rest _ignore)
-                             (dolist (button (widget-get widget :buttons))
+                             (dolist (button (widget-get checklist :buttons))
                                (when (widget-value button)
                                  (widget-checkbox-action button))))
                    " None ")
-    (insert ?\n)
-    (insert ?\n)
-    (setq widget (apply #'widget-create 'checklist
-			:entry-format " %b %v"
-                        (mapcar (lambda (string)
-                                  `(item ,string))
-                                list-of-strings)))
+    ;; TODO: Consider adding a menu to define the set operation
+    ;; for the following buttons, i.e. union, intersection, and
+    ;; set difference.
+    (insert ?\s)
+    (widget-create 'push-button
+                   :notify (lambda (&rest _ignore)
+                             (dolist (child (widget-get checklist :children))
+			       (unless (widget-get child :hare-folder-p)
+				 (let ((button (widget-get child :button)))
+				   (unless (widget-value button)
+                                     (widget-checkbox-action button))))))
+                   " Files ")
+    (insert ?\s)
+    (widget-create 'push-button
+                   :notify (lambda (&rest _ignore)
+                             (dolist (child (widget-get checklist :children))
+			       (when (widget-get child :hare-folder-p)
+				 (let ((button (widget-get child :button)))
+				   (unless (widget-value button)
+                                     (widget-checkbox-action button))))))
+                   " Folders ")
+    (when (consp (car children))
+      (insert ?\s)
+      (apply #'widget-create 'menu-choice
+	     :tag " VC State "
+	     :format "%[%t%]"
+	     :notify (lambda (widget &rest _ignore)
+		       (let ((state (widget-get widget :value)))
+                         (dolist (child (widget-get checklist :children))
+			   (when (eq state (widget-get child :hare-vc-state))
+			     (let ((button (widget-get child :button)))
+			       (unless (widget-value button)
+                                 (widget-checkbox-action button)))))))
+	     (mapcar (lambda (state)
+		       `(const
+			 :value ,state
+			 :format "%v"
+			 :tag ,(plist-get (cdr (assq state hare--vc-state-alist)) :help)))
+		     hare--vc-states)))
+    (insert ?\n ?\n)
+    (insert (directory-file-name (abbreviate-file-name parent)) ?: ?\n)
+    (let* ((start (length parent))
+	   (items (mapcar (lambda (object)
+			    (let ((child (if (consp object) (car object) object))
+				  (state (if (consp object) (cdr object) t)))
+			      `(hare--form-path
+				:value ,child
+				:hare-vc-state ,state
+				:hare-file-name ,(let ((str (substring child start)))
+						   (if (zerop (length str)) "." str))
+				:hare-folder-p ,(and (not (file-symlink-p child))
+						     (file-directory-p child)))))
+                          children)))
+      (setq checklist (apply #'widget-create 'checklist
+			     :entry-format " %b %v"
+			     items)))
     (let ((flag (not (null checked))))
-      (dolist (button (widget-get widget :buttons))
+      (dolist (button (widget-get checklist :buttons))
         (unless (eq (widget-value button) flag)
           (widget-checkbox-action button))))
-    widget))
+    checklist))
 
 (defun hare--form-svn-widget (type &rest options)
   "Insert a Subversion widget into the form.
@@ -991,10 +1056,11 @@ All file names are absolute."
     (setq children (sort (cl-delete-duplicates
 			  children :test #'hare--file-name-equal)
 			 #'hare--file-name-lessp))
+    ;; Ensure that the parent contains all children.
     (when-let ((dir (and children (file-name-directory (car children)))))
       (when (hare--file-name-lessp dir parent)
 	(setq parent dir)))
-    ;; If PARENT is not under version control, adjust the paths.
+    ;; If the parent is not under version control, adjust the paths.
     (let ((path parent))
       (while (and (hare--file-name-lessp root parent)
 		  (memq (vc-state-refresh parent 'SVN) '(ignored unregistered nil)))
@@ -1002,7 +1068,8 @@ All file names are absolute."
       (when (and (hare--file-name-lessp parent path)
 		 (null children))
 	(setq children (list path))))
-    ;; If there are no children, operate on PARENT.
+    ;; If there are no children, operate on the parent.  If so,
+    ;; optionally include the parent's files and directories.
     (when (null children)
       (setq children (list parent)))
     (when (and (null (cdr children))
@@ -1198,7 +1265,7 @@ too."))
 	(setq externals (hare--form-svn-widget 'checkbox
 			  :doc "Ignore external definitions."))
 	(hare--form-horizontal-line)
-	(setq targets (hare--form-check-list children t))
+	(setq targets (hare--form-paths parent children t))
 	()))))
 
 (defun hare--svn-cleanup (targets &rest options)
@@ -1290,7 +1357,7 @@ the rest.  Otherwise, error out if a path is already versioned."))
 If this option is enabled, add any missing parent directories of the
 target at depth ‘empty’, too."))
 	(hare--form-horizontal-line)
-	(setq targets (hare--form-check-list (mapcar #'car children) t))
+	(setq targets (hare--form-paths parent children t))
 	()))))
 
 (defun hare-svn-cleanup (&optional arg)
