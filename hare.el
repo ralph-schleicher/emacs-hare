@@ -1035,7 +1035,7 @@ Case is not significant if optional argument IGNORE-CASE is non-nil."
   "Return non-nil if STRING1 is less than STRING2 in lexicographic order.
 Case is not significant if optional argument IGNORE-CASE is non-nil."
   (let ((ans (compare-strings string1 0 nil string2 0 nil ignore-case)))
-    (and (numberp ans) (minusp ans))))
+    (and (numberp ans) (cl-minusp ans))))
 
 (defvar hare--file-name-ignore-case (memq system-type '(ms-dos windows-nt))
   "Whether or not to ignore case when comparing file names.")
