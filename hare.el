@@ -568,7 +568,7 @@ Third argument CHECKED determines the initial state
 
 Return value is a ‘checklist’ widget."
   ;; This is a closure for the notification call-backs.
-  (let (checklist)
+  (let (checklist operation)
     (unless (bolp)
       (insert ?\n))
     (insert "Check: ")
@@ -585,43 +585,66 @@ Return value is a ‘checklist’ widget."
                                (when (widget-value button)
                                  (widget-checkbox-action button))))
                    " None ")
-    ;; TODO: Consider adding a menu to define the set operation
-    ;; for the following buttons, i.e. union, intersection, and
-    ;; set difference.
-    (insert ?\s)
+    ;; A menu to define the set operation for the following buttons.
+    (insert ?\s ?\s)
+    (setq operation (apply #'widget-create 'menu-choice
+			   :value (if checked 'and 'or)
+			   :format "%[ %v %]"
+			   :menu-tag "Set Operation"
+			   '((const
+			      :value or
+			      :format "%t"
+			      :tag "OR"
+			      :menu-tag "Union/OR")
+			     (const
+			      :value and
+			      :format "%t"
+			      :tag "AND"
+			      :menu-tag "Intersection/AND")
+			     (const
+			      :value and-not
+			      :format "%t"
+			      :tag "AND NOT"
+			      :menu-tag "Difference/AND NOT")
+			     (const
+			      :value xor
+			      :format "%t"
+			      :tag "XOR"
+			      :menu-tag "Symmetric Difference/XOR"))))
+    (insert ?\s ?\s)
     (widget-create 'push-button
                    :notify (lambda (&rest _ignore)
-                             (dolist (child (widget-get checklist :children))
-			       (unless (widget-get child :hare-folder-p)
-				 (let ((button (widget-get child :button)))
-				   (unless (widget-value button)
-                                     (widget-checkbox-action button))))))
+			     (let ((op (widget-get operation :value)))
+                               (dolist (child (widget-get checklist :children))
+				 (hare--form-paths-apply-operation op
+				   (not (widget-get child :hare-folder-p))
+				   (widget-get child :button)))))
                    " Files ")
     (insert ?\s)
     (widget-create 'push-button
                    :notify (lambda (&rest _ignore)
-                             (dolist (child (widget-get checklist :children))
-			       (when (widget-get child :hare-folder-p)
-				 (let ((button (widget-get child :button)))
-				   (unless (widget-value button)
-                                     (widget-checkbox-action button))))))
+			     (let ((op (widget-get operation :value)))
+                               (dolist (child (widget-get checklist :children))
+				 (hare--form-paths-apply-operation op
+				   (widget-get child :hare-folder-p)
+				   (widget-get child :button)))))
                    " Folders ")
     (when (consp (car children))
       (insert ?\s)
       (apply #'widget-create 'menu-choice
-	     :tag " VC State "
-	     :format "%[%t%]"
+	     :format "%[ %t %]"
+	     :tag "VC State"
 	     :notify (lambda (widget &rest _ignore)
-		       (let ((state (widget-get widget :value)))
+		       (let ((state (widget-get widget :value))
+			     (op (widget-get operation :value)))
                          (dolist (child (widget-get checklist :children))
-			   (when (eq state (widget-get child :hare-vc-state))
-			     (let ((button (widget-get child :button)))
-			       (unless (widget-value button)
-                                 (widget-checkbox-action button)))))))
+			   (hare--form-paths-apply-operation op
+			     (eq state (widget-get child :hare-vc-state))
+			     (widget-get child :button)))))
 	     (mapcar (lambda (state)
 		       `(const
 			 :value ,state
-			 :format "%v"
+			 :format "%t"
 			 :tag ,(plist-get (cdr (assq state hare--vc-state-alist)) :help)))
 		     hare--vc-states)))
     (insert ?\n ?\n)
@@ -646,6 +669,36 @@ Return value is a ‘checklist’ widget."
         (unless (eq (widget-value button) flag)
           (widget-checkbox-action button))))
     checklist))
+
+(defun hare--form-paths-apply-operation (operation condition button)
+  "Apply a set operation."
+  (declare (indent 1))
+  (cl-ecase operation
+    (or
+     ;; Condition: T T F F
+     ;;    Button: T F T F
+     ;;        OR: T T T F
+     (when (and condition (not (widget-value button)))
+       (widget-checkbox-action button)))
+    (and
+     ;; Condition: T T F F
+     ;;    Button: T F T F
+     ;;       AND: T F F F
+     (when (and (not condition) (widget-value button))
+       (widget-checkbox-action button)))
+    (and-not
+     ;; Condition: T T F F
+     ;;    Button: T F T F
+     ;;   AND NOT: F T F F
+     (when (or condition (widget-value button))
+       (widget-checkbox-action button)))
+    (xor
+     ;; Condition: T T F F
+     ;;    Button: T F T F
+     ;;       XOR: F T T F
+     (when condition
+       (widget-checkbox-action button))))
+  ())
 
 (defun hare--form-svn-widget (type &rest options)
   "Insert a Subversion widget into the form.
