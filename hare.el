@@ -1322,35 +1322,6 @@ too."))
 	(setq targets (hare--form-paths parent children t))
 	()))))
 
-(defun hare--svn-cleanup (targets &rest options)
-  "Run the ‘svn cleanup’ command."
-  (let ((remove-unversioned
-	 (when (plist-get options :remove-unversioned)
-	   "--remove-unversioned"))
-	(remove-ignored
-	 (when (plist-get options :remove-ignored)
-	   "--remove-ignored"))
-	(vacuum-pristines
-	 (when (plist-get options :vacuum-pristines)
-	   "--vacuum-pristines"))
-	(include-externals
-	 (when (plist-get options :include-externals)
-	   "--include-externals")))
-    (hare--with-process-window (buffer '(svn-cleanup))
-      (hare--all-null
-       ;; The actual clean up command.
-       (when (plist-get options :cleanup)
-	 (not (apply #'hare--svn buffer 0 targets "cleanup"
-		     (delq nil (list include-externals)))))
-       ;; The alternative clean up command.
-       (when (or remove-unversioned remove-ignored vacuum-pristines)
-	 (not (apply #'hare--svn buffer 0 targets "cleanup"
-		     (delq nil (list remove-unversioned
-				     remove-ignored
-				     vacuum-pristines
-				     include-externals)))))))
-    ()))
-
 (defun hare--svn-add (targets &rest options)
   "Run the ‘svn add’ command."
   (hare--with-process-window (buffer '(svn-add))
@@ -1413,6 +1384,35 @@ target at depth ‘empty’, too."))
 	(hare--form-horizontal-line)
 	(setq targets (hare--form-paths parent children t))
 	()))))
+
+(defun hare--svn-cleanup (targets &rest options)
+  "Run the ‘svn cleanup’ command."
+  (let ((remove-unversioned
+	 (when (plist-get options :remove-unversioned)
+	   "--remove-unversioned"))
+	(remove-ignored
+	 (when (plist-get options :remove-ignored)
+	   "--remove-ignored"))
+	(vacuum-pristines
+	 (when (plist-get options :vacuum-pristines)
+	   "--vacuum-pristines"))
+	(include-externals
+	 (when (plist-get options :include-externals)
+	   "--include-externals")))
+    (hare--with-process-window (buffer '(svn-cleanup))
+      (hare--all-null
+       ;; The actual clean up command.
+       (when (plist-get options :cleanup)
+	 (not (apply #'hare--svn buffer 0 targets "cleanup"
+		     (delq nil (list include-externals)))))
+       ;; The alternative clean up command.
+       (when (or remove-unversioned remove-ignored vacuum-pristines)
+	 (not (apply #'hare--svn buffer 0 targets "cleanup"
+		     (delq nil (list remove-unversioned
+				     remove-ignored
+				     vacuum-pristines
+				     include-externals)))))))
+    ()))
 
 (defun hare-svn-cleanup (&optional _arg)
   "Recursively clean up the working copy."
