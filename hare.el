@@ -922,12 +922,17 @@ Exclude the immediate target of the operation from the working copy.")))))))
 
 ;;;; Process Buffer
 
-(defcustom hare-delete-process-window t
+(defcustom hare-delete-process-window '(not svn-status)
   "Whether or not to delete the process window after an operation.
-This option only has an effect if the process succeeds."
+This option only has an effect if the process succeeds.
+
+If the value is a non-empty list of symbols, it lists the operations
+after which the process window shall be deleted.  If the list starts
+with the symbol ‘not’, it lists the operations after which the process
+window shall not be deleted."
   :type '(choice (const :tag "Never" nil)
 		 (const :tag "Always" t)
-		 (set :tag "Conditions"
+		 (set :tag "Operations"
 		      ;; Subversion commands.
 		      (const svn-add)
 		      (const svn-auth)
@@ -977,14 +982,26 @@ This option only has an effect if the process succeeds."
   "Delete the process window.
 
 First argument BUFFER is the process buffer.
-Second argument CONDITIONS is a list of symbols.
+Second argument CONDITIONS is a list of symbols.  It encodes the
+ processed operation.  See the variable ‘hare-delete-process-window’
+ for more details.
 
 This function acts according to the current values of the options
 ‘hare-delete-process-window’ and ‘hare-delete-process-window-delay’."
   (when (cond ((consp hare-delete-process-window)
-	       (cl-some (lambda (condition)
-			  (memq condition hare-delete-process-window))
-			conditions))
+	       (let* ((notp (eq (car hare-delete-process-window) 'not))
+		      (haystack (if notp
+				    (cdr hare-delete-process-window)
+				  hare-delete-process-window)))
+		 (funcall (if notp #'cl-notany #'cl-some)
+			  (lambda (needle)
+			    (memq needle haystack))
+			  conditions))
+	       (let* ((notp (eq (car hare-delete-process-window) 'not))
+		      (list (if notp (cdr hare-delete-process-window)
+			      hare-delete-process-window))
+		      (found (and (cl-some (lambda (key) (memq key list)) conditions) t)))
+		 (if notp (not found) found)))
 	      (hare-delete-process-window))
     (sit-for (max 0.2 hare-delete-process-window-delay))
     (delete-windows-on buffer)))
