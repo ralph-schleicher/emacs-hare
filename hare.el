@@ -1424,7 +1424,7 @@ target at depth ‘empty’, too."))
 	(setq revision (hare--form-svn-widget 'revision))
 	(insert ?\n)
 	(setq depth (hare--form-svn-widget 'depth
-		      :value 'infinite))
+		      :value 'infinity))
 	(insert ?\n)
 	(setq no-ignore (hare--form-svn-widget 'checkbox
 			  :doc "Don't apply ignore rules to implicitly visited items.
