@@ -1385,6 +1385,69 @@ target at depth ‘empty’, too."))
 	(setq targets (hare--form-paths parent children t))
 	()))))
 
+(defun hare--svn-status (targets &rest options)
+  "Run the ‘svn status’ command."
+  (hare--with-process-window (buffer '(svn-status))
+    (apply #'hare--svn buffer 0 targets "status"
+	   (nconc (when-let ((revision (plist-get options :revision)))
+		    (list "--revision" (hare--string revision)))
+		  (when-let ((depth (plist-get options :depth)))
+		    (list "--depth" (hare--string depth)))
+		  (when (plist-get options :no-ignore)
+		    (list "--no-ignore"))
+		  (when (plist-get options :ignore-externals)
+		    (list "--ignore-externals"))
+		  (when (plist-get options :quiet)
+		    (list "--quiet"))
+		  (when (plist-get options :show-updates)
+		    (list "--show-updates"))
+		  (when (plist-get options :verbose)
+		    (list "--verbose"))))))
+
+(defun hare-svn-status (&optional _arg)
+  "Print the status of working copy files and directories."
+  (interactive "P")
+  (cl-multiple-value-bind (_root parent children)
+      (cl-values-list (hare--svn-collect-paths))
+    (if (null children)
+	(message "Nothing to do")
+      (hare--form (targets revision depth no-ignore externals quiet updates verbose)
+	  "Print the status of working copy files and directories."
+	  (hare--svn-status targets
+			    :revision revision
+			    :depth depth
+			    :no-ignore no-ignore
+			    :ignore-externals externals
+			    :quiet quiet
+			    :show-updates updates
+			    :verbose verbose)
+	(setq revision (hare--form-svn-widget 'revision))
+	(insert ?\n)
+	(setq depth (hare--form-svn-widget 'depth
+		      :value 'infinite))
+	(insert ?\n)
+	(setq no-ignore (hare--form-svn-widget 'checkbox
+			  :doc "Don't apply ignore rules to implicitly visited items.
+Subversion uses ignore patterns to determine which items should be
+skipped as part of a larger recursive operation.  If this option is
+enabled, operate on all the files and directories present."))
+	(insert ?\n)
+	(setq externals (hare--form-svn-widget 'checkbox
+			  :doc "Ignore external definitions."))
+	(insert ?\n)
+	(setq quiet (hare--form-svn-widget 'checkbox
+		      :doc "Print only summary information about locally modified items."))
+	(insert ?\n)
+	(setq updates (hare--form-svn-widget 'checkbox
+			:doc "Print working copy revision and server out-of-date information."))
+	(insert ?\n)
+	(setq verbose (hare--form-svn-widget 'checkbox
+			:value t
+			:doc "Print full revision information on every item."))
+	(hare--form-horizontal-line)
+	(setq targets (hare--form-paths parent children t))
+	()))))
+
 (defun hare--svn-cleanup (targets &rest options)
   "Run the ‘svn cleanup’ command."
   (let ((remove-unversioned
@@ -1452,6 +1515,9 @@ Also operate on externals defined by ‘svn:externals’ properties."))
     (bindings--define-key menu [hare-svn-cleanup]
       '(menu-item "Clean up..." hare-svn-cleanup
 		  :help "Recursively clean up the working copy"))
+    (bindings--define-key menu [hare-svn-status]
+      '(menu-item "Status..." hare-svn-status
+		  :help "Print the status of working copy files and directories"))
     (bindings--define-key menu [hare-svn-add]
       '(menu-item "Add..." hare-svn-add
 		  :help "Put files and directories under version control"))
