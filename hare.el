@@ -345,6 +345,29 @@ revision number and status are visualized."
 
 ;;;; Paths
 
+(defun hare--string-equal (string1 string2 &optional ignore-case)
+  "Return non-nil if STRING1 is equal to STRING2 in lexicographic order.
+Case is not significant if optional argument IGNORE-CASE is non-nil."
+  (let ((ans (compare-strings string1 0 nil string2 0 nil ignore-case)))
+    (eq ans t)))
+
+(defun hare--string-lessp (string1 string2 &optional ignore-case)
+  "Return non-nil if STRING1 is less than STRING2 in lexicographic order.
+Case is not significant if optional argument IGNORE-CASE is non-nil."
+  (let ((ans (compare-strings string1 0 nil string2 0 nil ignore-case)))
+    (and (numberp ans) (cl-minusp ans))))
+
+(defvar hare--file-name-ignore-case (memq system-type '(ms-dos windows-nt))
+  "Whether or not to ignore case when comparing file names.")
+
+(defun hare--file-name-equal (name1 name2)
+  "Like ‘hare--string-equal’ but consider ‘hare--file-name-ignore-case’."
+  (hare--string-equal name1 name2 hare--file-name-ignore-case))
+
+(defun hare--file-name-lessp (name1 name2)
+  "Like ‘hare--string-lessp’ but consider ‘hare--file-name-ignore-case’."
+  (hare--string-lessp name1 name2 hare--file-name-ignore-case))
+
 (cl-defstruct (hare--path
 	       (:constructor nil)
 	       (:constructor hare--make-path)
@@ -379,6 +402,198 @@ This type is only used as a child item of a HareSVN paths structure."
    :documentation "The responsible VC backend.")
   (vc-states ()
    :documentation "The unique VC states of the children."))
+
+(defun hare--collect-paths (&rest options)
+  "Collect paths, i.e. files and directories.
+
+Start with the set of selected files and directories.  The current
+working directory is called the parent and the selected items are
+the children.  Only the children are part of the collection.
+
+If keyword argument IGNORE-SELECTED is non-nil, ignore any
+ selected item, i.e. start with an empty set.
+If keyword argument IGNORE-MARKS is non-nil, ignore marks, i.e.
+ just collect the current item.  This option only has an effect
+ if IGNORE-SELECTED is nil and the current mode has the concept
+ of marked items; like, for example, Dired.
+If keyword argument REQUIRE-SELECTED is non-nil, signal an error
+ if no item is selected.  This option is mutually exclusive to
+ the IGNORE-SELECTED option.  Specifying both options will always
+ signal an error.
+
+After that the parent directory will be fixed.  If VC options
+are enabled, the parent directory will be adjusted so that it is
+a registered directory within the repository.  Additionally, all
+child items outside the repository are silently ignored.  If no
+children remain, collect the parent.
+
+If keyword argument COLLECT-PARENT is non-nil, unconditionally
+ add the parent to the collection.
+If keyword argument PARENT-ITEMS is non-nil, collect the parent's
+ immediate child items iff no other child items are selected.
+
+Various VC options are assessed based on the current working
+directory.
+
+If keyword argument VC-BACKEND is non-nil, signal an error if no
+ responsible VC backend can be found.  If VC-BACKEND is a list,
+ signal an error is the responsible VC backend is not a member
+ of the list.
+If keyword argument VC-ROOT is non-nil, signal an error if the VC
+ backend's top-level working directory can't be found.
+If keyword argument VC-STATE is non-nil, determine the VC state of
+ the children, too.  If VC-STATE is a list, only collect children
+ who's VC state is a member of the list.  If the list starts with
+ ‘not’, complement the test.
+
+Return value is a HareSVN paths structure."
+  (let (parent children root backend)
+    ;; Collect absolute path names.  Expand file name abbreviations,
+    ;; like ‘~/foo’, and mark directory file names as directories.
+    (cond ((derived-mode-p 'dired-mode)
+	   (setq parent (file-name-as-directory (expand-file-name default-directory))
+		 children (cond ((plist-get options :ignore-selected)
+				 ())
+				((plist-get options :ignore-marks)
+				 (when-let* ((relative (dired-get-filename t t))
+					     (absolute (expand-file-name relative parent)))
+				   (if (and (file-directory-p absolute) (not (file-symlink-p absolute)))
+				       (list (file-name-as-directory absolute))
+				     (list absolute))))
+				((delq nil (dired-map-over-marks
+					    ;; Expand ‘.’ and ‘..’ and mark directory
+					    ;; file names as directories.
+					    (when-let* ((relative (dired-get-filename t t))
+							(absolute (expand-file-name relative parent)))
+					      (if (and (file-directory-p absolute) (not (file-symlink-p absolute)))
+						  (file-name-as-directory absolute)
+						absolute))
+					    ()))))))
+	  (buffer-file-name
+	   (let ((path (expand-file-name buffer-file-name)))
+	     (setq parent (file-name-directory path)
+		   children (if (plist-get options :ignore-selected) () (list path)))))
+	  (default-directory
+	   (setq parent (file-name-as-directory (expand-file-name default-directory))))
+	  (t
+	   (error "Can not determine any path")))
+    (when (and (null children) (plist-get options :require-selected))
+      (error "No path selected"))
+    ;; Handle the VC options.
+    (let ((vc-backend (plist-get options :vc-backend))
+	  (vc-root (plist-get options :vc-root))
+	  (vc-state (plist-get options :vc-state)))
+      (when (or vc-backend vc-root vc-state)
+	;; Determine the VC backend.
+	(setq backend (vc-responsible-backend parent))
+	(when (null backend)
+	  (error "The directory ‘%s’ is not part of a repository" parent))
+	(when (and vc-backend (not (eq vc-backend t)))
+	  (unless (memq backend (if (consp vc-backend) vc-backend (list vc-backend)))
+	    (error "The directory ‘%s’ is part of a %s repository" parent backend)))
+	;; Determine the VC root.
+	(setq root (condition-case nil
+		       (vc-call-backend backend 'root parent)
+		     (vc-not-supported)))
+	(when (and vc-root (null root))
+	  (error "The directory ‘%s’ is not part of a %s repository" parent backend))))
+    ;; Silently remove all children outside the repository.
+    (setq root (if (null root)
+		   parent
+		 (file-name-as-directory (expand-file-name root))))
+    (setq children (cl-delete-if (lambda (child)
+				   (hare--file-name-lessp child root))
+				 children))
+    (when (not (null backend))
+      (when-let ((admin (condition-case nil
+			    (vc-call-backend backend 'find-admin-dir root)
+			  (vc-not-supported))))
+	(setf admin (file-name-as-directory (expand-file-name admin)))
+	(setq children (cl-delete-if (lambda (child)
+				       (string-prefix-p admin child hare--file-name-ignore-case))
+				     children))))
+    ;; Sort children in ascending order.
+    (setq children (sort (cl-delete-duplicates
+			  children :test #'hare--file-name-equal)
+			 #'hare--file-name-lessp))
+    ;; Ensure that the parent contains all children.
+    (when-let ((dir (and children (file-name-directory (car children)))))
+      (when (hare--file-name-lessp dir parent)
+	(setq parent dir)))
+    ;; If the parent is not under version control, adjust the paths.
+    (when (not (null backend))
+      (let ((path parent))
+	(while (and (hare--file-name-lessp root parent)
+		    (memq (vc-state-refresh parent backend) '(ignored unregistered nil)))
+	  (setq parent (file-name-directory (directory-file-name parent))))
+	(when (and (hare--file-name-lessp parent path)
+		   (null children))
+	  (setq children (list path)))))
+    ;; If there are no children, operate on the parent.
+    (when (null children)
+      (setq children (list parent)))
+    (when (and (plist-get options :collect-parent)
+	       (not (hare--file-name-equal (car children) parent)))
+      (setq children (cons parent children)))
+    ;; When operating on the parent only, optionally include the
+    ;; parent's files and directories.
+    (when (and (plist-get options :parent-items)
+	       (hare--file-name-equal (car children) parent)
+	       (null (cdr children)))
+      (setcdr children (sort (delq nil (mapcar (lambda (relative)
+						 (unless (cl-member relative vc-directory-exclusion-list
+								    :test #'hare--file-name-equal)
+      						   (let ((absolute (expand-file-name relative parent)))
+						     (if (and (file-directory-p absolute) (not (file-symlink-p absolute)))
+							 (file-name-as-directory absolute)
+						       absolute))))
+					       (directory-files parent nil directory-files-no-dot-files-regexp t)))
+			     #'hare--file-name-lessp)))
+    ;; Apply filters.
+    (let ((vc-state (plist-get options :vc-state)))
+      (cond ((consp vc-state)
+	     (let (list state)
+	       (if (not (eq (car vc-state) 'not))
+		   (dolist (child children)
+		     (setq state (vc-state-refresh child backend))
+		     (when (or (memq state vc-state) (hare--file-name-equal child parent))
+		       (push (cons child state) list)))
+		 ;; Drop ‘not’.
+		 (setq vc-state (cdr vc-state))
+		 (dolist (child children)
+		   (setq state (vc-state-refresh child backend))
+		   (when (or (not (memq state vc-state)) (hare--file-name-equal child parent))
+		     (push (cons child state) list))))
+	       (setq children (nreverse list))))
+	    (vc-state
+	     ;; Augment the paths with the VC state.
+	     (cl-do ((cell children #'cdr))
+		 ((consp cell))
+	       (let ((child (car cell)))
+		 (setcar cell (cons child (vc-state-refresh child backend))))))))
+    ;; Create the HareSVN paths structure.
+    (let ((start (length parent)))
+      (hare--make-paths
+       :parent parent
+       :children (mapcar (lambda (object)
+			   (let ((child (if (consp object) (car object) object))
+				 (state (if (consp object) (cdr object) t)))
+			     (hare--make-path
+			      :absolute child
+			      :relative (let ((str (substring child start)))
+					  (if (zerop (length str)) "." str))
+			      :vc-state state)))
+			 children)
+       :vc-root root
+       :vc-backend backend
+       :vc-states (when (consp (car children))
+		    (let (list)
+		      (dolist (child children)
+			(cl-pushnew (cdr child) list))
+		      ;; Same order as in ‘hare--vc-states’.
+		      (cl-remove-if-not (lambda (state)
+					  (memq state list))
+					hare--vc-states)))))))
 
 ;;;; Forms
 
@@ -1082,222 +1297,7 @@ Without any form, value is true."
      (with-output-to-string
        (princ object)))))
 
-(defun hare--string-equal (string1 string2 &optional ignore-case)
-  "Return non-nil if STRING1 is equal to STRING2 in lexicographic order.
-Case is not significant if optional argument IGNORE-CASE is non-nil."
-  (let ((ans (compare-strings string1 0 nil string2 0 nil ignore-case)))
-    (eq ans t)))
-
-(defun hare--string-lessp (string1 string2 &optional ignore-case)
-  "Return non-nil if STRING1 is less than STRING2 in lexicographic order.
-Case is not significant if optional argument IGNORE-CASE is non-nil."
-  (let ((ans (compare-strings string1 0 nil string2 0 nil ignore-case)))
-    (and (numberp ans) (cl-minusp ans))))
-
-(defvar hare--file-name-ignore-case (memq system-type '(ms-dos windows-nt))
-  "Whether or not to ignore case when comparing file names.")
-
-(defun hare--file-name-equal (name1 name2)
-  "Like ‘hare--string-equal’ but consider ‘hare--file-name-ignore-case’."
-  (hare--string-equal name1 name2 hare--file-name-ignore-case))
-
-(defun hare--file-name-lessp (name1 name2)
-  "Like ‘hare--string-lessp’ but consider ‘hare--file-name-ignore-case’."
-  (hare--string-lessp name1 name2 hare--file-name-ignore-case))
-
 ;;;; Subversion
-
-(defun hare--collect-paths (&rest options)
-  "Collect paths, i.e. files and directories.
-
-Start with the set of selected files and directories.  The current
-working directory is called the parent and the selected items are
-the children.  Only the children are part of the collection.
-
-If keyword argument IGNORE-SELECTED is non-nil, ignore any
- selected item, i.e. start with an empty set.
-If keyword argument IGNORE-MARKS is non-nil, ignore marks, i.e.
- just collect the current item.  This option only has an effect
- if IGNORE-SELECTED is nil and the current mode has the concept
- of marked items; like, for example, Dired.
-If keyword argument REQUIRE-SELECTED is non-nil, signal an error
- if no item is selected.  This option is mutually exclusive to
- the IGNORE-SELECTED option.  Specifying both options will always
- signal an error.
-
-After that the parent directory will be fixed.  If VC options
-are enabled, the parent directory will be adjusted so that it is
-a registered directory within the repository.  Additionally, all
-child items outside the repository are silently ignored.  If no
-children remain, collect the parent.
-
-If keyword argument COLLECT-PARENT is non-nil, unconditionally
- add the parent to the collection.
-If keyword argument PARENT-ITEMS is non-nil, collect the parent's
- immediate child items iff no other child items are selected.
-
-Various VC options are assessed based on the current working
-directory.
-
-If keyword argument VC-BACKEND is non-nil, signal an error if no
- responsible VC backend can be found.  If VC-BACKEND is a list,
- signal an error is the responsible VC backend is not a member
- of the list.
-If keyword argument VC-ROOT is non-nil, signal an error if the VC
- backend's top-level working directory can't be found.
-If keyword argument VC-STATE is non-nil, determine the VC state of
- the children, too.  If VC-STATE is a list, only collect children
- who's VC state is a member of the list.  If the list starts with
- ‘not’, complement the test.
-
-Return value is a HareSVN paths structure."
-  (let (parent children root backend)
-    ;; Collect absolute path names.  Expand file name abbreviations,
-    ;; like ‘~/foo’, and mark directory file names as directories.
-    (cond ((derived-mode-p 'dired-mode)
-	   (setq parent (file-name-as-directory (expand-file-name default-directory))
-		 children (cond ((plist-get options :ignore-selected)
-				 ())
-				((plist-get options :ignore-marks)
-				 (when-let* ((relative (dired-get-filename t t))
-					     (absolute (expand-file-name relative parent)))
-				   (if (and (file-directory-p absolute) (not (file-symlink-p absolute)))
-				       (list (file-name-as-directory absolute))
-				     (list absolute))))
-				((delq nil (dired-map-over-marks
-					    ;; Expand ‘.’ and ‘..’ and mark directory
-					    ;; file names as directories.
-					    (when-let* ((relative (dired-get-filename t t))
-							(absolute (expand-file-name relative parent)))
-					      (if (and (file-directory-p absolute) (not (file-symlink-p absolute)))
-						  (file-name-as-directory absolute)
-						absolute))
-					    ()))))))
-	  (buffer-file-name
-	   (let ((path (expand-file-name buffer-file-name)))
-	     (setq parent (file-name-directory path)
-		   children (if (plist-get options :ignore-selected) () (list path)))))
-	  (default-directory
-	   (setq parent (file-name-as-directory (expand-file-name default-directory))))
-	  (t
-	   (error "Can not determine any path")))
-    (when (and (null children) (plist-get options :require-selected))
-      (error "No path selected"))
-    ;; Handle the VC options.
-    (let ((vc-backend (plist-get options :vc-backend))
-	  (vc-root (plist-get options :vc-root))
-	  (vc-state (plist-get options :vc-state)))
-      (when (or vc-backend vc-root vc-state)
-	;; Determine the VC backend.
-	(setq backend (vc-responsible-backend parent))
-	(when (null backend)
-	  (error "The directory ‘%s’ is not part of a repository" parent))
-	(when (and vc-backend (not (eq vc-backend t)))
-	  (unless (memq backend (if (consp vc-backend) vc-backend (list vc-backend)))
-	    (error "The directory ‘%s’ is part of a %s repository" parent backend)))
-	;; Determine the VC root.
-	(setq root (condition-case nil
-		       (vc-call-backend backend 'root parent)
-		     (vc-not-supported)))
-	(when (and vc-root (null root))
-	  (error "The directory ‘%s’ is not part of a %s repository" parent backend))))
-    ;; Silently remove all children outside the repository.
-    (setq root (if (null root)
-		   parent
-		 (file-name-as-directory (expand-file-name root))))
-    (setq children (cl-delete-if (lambda (child)
-				   (hare--file-name-lessp child root))
-				 children))
-    (when (not (null backend))
-      (when-let ((admin (condition-case nil
-			    (vc-call-backend backend 'find-admin-dir root)
-			  (vc-not-supported))))
-	(setf admin (file-name-as-directory (expand-file-name admin)))
-	(setq children (cl-delete-if (lambda (child)
-				       (string-prefix-p admin child hare--file-name-ignore-case))
-				     children))))
-    ;; Sort children in ascending order.
-    (setq children (sort (cl-delete-duplicates
-			  children :test #'hare--file-name-equal)
-			 #'hare--file-name-lessp))
-    ;; Ensure that the parent contains all children.
-    (when-let ((dir (and children (file-name-directory (car children)))))
-      (when (hare--file-name-lessp dir parent)
-	(setq parent dir)))
-    ;; If the parent is not under version control, adjust the paths.
-    (when (not (null backend))
-      (let ((path parent))
-	(while (and (hare--file-name-lessp root parent)
-		    (memq (vc-state-refresh parent backend) '(ignored unregistered nil)))
-	  (setq parent (file-name-directory (directory-file-name parent))))
-	(when (and (hare--file-name-lessp parent path)
-		   (null children))
-	  (setq children (list path)))))
-    ;; If there are no children, operate on the parent.
-    (when (null children)
-      (setq children (list parent)))
-    (when (and (plist-get options :collect-parent)
-	       (not (hare--file-name-equal (car children) parent)))
-      (setq children (cons parent children)))
-    ;; When operating on the parent only, optionally include the
-    ;; parent's files and directories.
-    (when (and (plist-get options :parent-items)
-	       (hare--file-name-equal (car children) parent)
-	       (null (cdr children)))
-      (setcdr children (sort (delq nil (mapcar (lambda (relative)
-						 (unless (cl-member relative vc-directory-exclusion-list
-								    :test #'hare--file-name-equal)
-      						   (let ((absolute (expand-file-name relative parent)))
-						     (if (and (file-directory-p absolute) (not (file-symlink-p absolute)))
-							 (file-name-as-directory absolute)
-						       absolute))))
-					       (directory-files parent nil directory-files-no-dot-files-regexp t)))
-			     #'hare--file-name-lessp)))
-    ;; Apply filters.
-    (let ((vc-state (plist-get options :vc-state)))
-      (cond ((consp vc-state)
-	     (let (list state)
-	       (if (not (eq (car vc-state) 'not))
-		   (dolist (child children)
-		     (setq state (vc-state-refresh child backend))
-		     (when (or (memq state vc-state) (hare--file-name-equal child parent))
-		       (push (cons child state) list)))
-		 ;; Drop ‘not’.
-		 (setq vc-state (cdr vc-state))
-		 (dolist (child children)
-		   (setq state (vc-state-refresh child backend))
-		   (when (or (not (memq state vc-state)) (hare--file-name-equal child parent))
-		     (push (cons child state) list))))
-	       (setq children (nreverse list))))
-	    (vc-state
-	     ;; Augment the paths with the VC state.
-	     (cl-do ((cell children #'cdr))
-		 ((consp cell))
-	       (let ((child (car cell)))
-		 (setcar cell (cons child (vc-state-refresh child backend))))))))
-    ;; Create the HareSVN paths structure.
-    (let ((start (length parent)))
-      (hare--make-paths
-       :parent parent
-       :children (mapcar (lambda (object)
-			   (let ((child (if (consp object) (car object) object))
-				 (state (if (consp object) (cdr object) t)))
-			     (hare--make-path
-			      :absolute child
-			      :relative (let ((str (substring child start)))
-					  (if (zerop (length str)) "." str))
-			      :vc-state state)))
-			 children)
-       :vc-root root
-       :vc-backend backend
-       :vc-states (when (consp (car children))
-		    (let (list)
-		      (dolist (child children)
-			(cl-pushnew (cdr child) list))
-		      ;; Same order as in ‘hare--vc-states’.
-		      (cl-remove-if-not (lambda (state)
-					  (memq state list))
-					hare--vc-states)))))))
 
 (defun hare--svn-collect-paths (&rest options)
   "Collect paths, i.e. files and directories, for a Subversion command.
