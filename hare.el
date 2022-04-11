@@ -1448,32 +1448,30 @@ Return true if the command succeeds."
   (interactive "P")
   (let ((paths (hare--svn-collect-paths
 		:vc-state t)))
-    (if (null (hare--paths-children paths))
-	(message "Nothing to do")
-      (hare--form (targets revision depth set-depth accept force parents externals)
-	  "Update your working copy.
+    (hare--form (targets revision depth set-depth accept force parents externals)
+	"Update your working copy.
 
 Synchronize the working copy to the given revision.  If no revision is
 specified, synchronize the working copy to the latest revision in the
 repository."
-	  (hare--svn-update targets
-			    :revision revision
-			    :depth depth
-			    :set-depth set-depth
-			    :accept accept
-			    :force force
-			    :parents parents
-			    :ignore-externals externals)
-	(setq revision (hare--form-svn-widget 'revision))
-	(insert ?\n)
-	(setq depth (hare--form-svn-widget 'depth))
-	(insert ?\n)
-	(setq set-depth (hare--form-svn-widget 'set-depth))
-	(insert ?\n)
-	(setq accept (hare--form-svn-widget 'accept))
-	(insert ?\n)
-	(setq force (hare--form-svn-widget 'checkbox
-		      :doc "Handle unversioned obstructions as changes.
+	(hare--svn-update targets
+			  :revision revision
+			  :depth depth
+			  :set-depth set-depth
+			  :accept accept
+			  :force force
+			  :parents parents
+			  :ignore-externals externals)
+      (setq revision (hare--form-svn-widget 'revision))
+      (insert ?\n)
+      (setq depth (hare--form-svn-widget 'depth))
+      (insert ?\n)
+      (setq set-depth (hare--form-svn-widget 'set-depth))
+      (insert ?\n)
+      (setq accept (hare--form-svn-widget 'accept))
+      (insert ?\n)
+      (setq force (hare--form-svn-widget 'checkbox
+		    :doc "Handle unversioned obstructions as changes.
 If enabled, unversioned paths in the working copy do not automatically
 cause a failure if the update attempts to add the same path.  If the
 unversioned path is the same type (file or directory) as the path in
@@ -1483,20 +1481,20 @@ children may also obstruct and become versioned.  For files, any content
 differences between the obstruction and the repository are treated like
 a local modification to the working copy.  All properties from the
 repository are applied to the obstructing path."))
-	(insert ?\n)
-	(setq parents (hare--form-svn-widget 'checkbox
-			:doc "Create intermediate directories.
+      (insert ?\n)
+      (setq parents (hare--form-svn-widget 'checkbox
+		      :doc "Create intermediate directories.
 If a target is missing in the working copy but its immediate parent
 directory is present, checkout the target into its parent directory
 at the specified depth.  If this option is enabled, create any missing
 parent directories of the target by checking them out at depth ‘empty’,
 too."))
-	(insert ?\n)
-	(setq externals (hare--form-svn-widget 'checkbox
-			  :doc "Ignore external definitions."))
-	(hare--form-horizontal-line)
-	(setq targets (hare--form-paths paths t))
-	()))))
+      (insert ?\n)
+      (setq externals (hare--form-svn-widget 'checkbox
+			:doc "Ignore external definitions."))
+      (hare--form-horizontal-line)
+      (setq targets (hare--form-paths paths t))
+      ())))
 
 (defun hare--svn-add (targets &rest options)
   "Run the ‘svn add’ command."
@@ -1523,42 +1521,40 @@ too."))
   (let ((paths (hare--svn-collect-paths
 		:vc-state '(unregistered)
 		:parent-items t)))
-    (if (null (hare--paths-children paths))
-	(message "Nothing to do")
-      (hare--form (targets depth force no-ignore auto-props parents)
-	  "Put files and directories under version control."
-	  (hare--svn-add targets
-			 :depth depth
-			 :no-ignore no-ignore
-			 :auto-props (eq auto-props t)
-			 :no-auto-props (eq auto-props nil)
-			 :force force
-			 :parents parents)
-	(setq depth (hare--form-svn-widget 'depth
-		      :value 'empty))
-	(insert ?\n)
-	(setq no-ignore (hare--form-svn-widget 'checkbox
-			  :doc "Don't apply ignore rules to implicitly added items.
+    (hare--form (targets depth force no-ignore auto-props parents)
+	"Put files and directories under version control."
+	(hare--svn-add targets
+		       :depth depth
+		       :no-ignore no-ignore
+		       :auto-props (eq auto-props t)
+		       :no-auto-props (eq auto-props nil)
+		       :force force
+		       :parents parents)
+      (setq depth (hare--form-svn-widget 'depth
+		    :value 'empty))
+      (insert ?\n)
+      (setq no-ignore (hare--form-svn-widget 'checkbox
+			:doc "Don't apply ignore rules to implicitly added items.
 Subversion uses ignore patterns to determine which items should be
 skipped as part of a larger recursive operation.  If this option is
 enabled, operate on all the files and directories present."))
-	(insert ?\n)
-	(setq auto-props (hare--form-svn-widget 'auto-props))
-	(insert ?\n)
-	(setq force (hare--form-svn-widget 'checkbox
-		      :value t
-		      :doc "Ignore already versioned paths.
+      (insert ?\n)
+      (setq auto-props (hare--form-svn-widget 'auto-props))
+      (insert ?\n)
+      (setq force (hare--form-svn-widget 'checkbox
+		    :value t
+		    :doc "Ignore already versioned paths.
 If this option is enabled, add all the unversioned paths and ignore
 the rest.  Otherwise, error out if a path is already versioned."))
-	(insert ?\n)
-	(setq parents (hare--form-svn-widget 'checkbox
-			:value t
-			:doc "Add intermediate directories.
+      (insert ?\n)
+      (setq parents (hare--form-svn-widget 'checkbox
+		      :value t
+		      :doc "Add intermediate directories.
 If this option is enabled, add any missing parent directories of the
 target at depth ‘empty’, too."))
-	(hare--form-horizontal-line)
-	(setq targets (hare--form-paths paths t))
-	()))))
+      (hare--form-horizontal-line)
+      (setq targets (hare--form-paths paths t))
+      ())))
 
 (defun hare--svn-status (targets &rest options)
   "Run the ‘svn status’ command."
@@ -1584,43 +1580,41 @@ target at depth ‘empty’, too."))
   (interactive "P")
   (let ((paths (hare--svn-collect-paths
 		:vc-state t)))
-    (if (null (hare--paths-children paths))
-	(message "Nothing to do")
-      (hare--form (targets revision depth no-ignore externals quiet updates verbose)
-	  "Print the status of working copy files and directories."
-	  (hare--svn-status targets
-			    :revision revision
-			    :depth depth
-			    :no-ignore no-ignore
-			    :ignore-externals externals
-			    :quiet quiet
-			    :show-updates updates
-			    :verbose verbose)
-	(setq revision (hare--form-svn-widget 'revision))
-	(insert ?\n)
-	(setq depth (hare--form-svn-widget 'depth
-		      :value 'infinity))
-	(insert ?\n)
-	(setq no-ignore (hare--form-svn-widget 'checkbox
-			  :doc "Don't apply ignore rules to implicitly visited items.
+    (hare--form (targets revision depth no-ignore externals quiet updates verbose)
+	"Print the status of working copy files and directories."
+	(hare--svn-status targets
+			  :revision revision
+			  :depth depth
+			  :no-ignore no-ignore
+			  :ignore-externals externals
+			  :quiet quiet
+			  :show-updates updates
+			  :verbose verbose)
+      (setq revision (hare--form-svn-widget 'revision))
+      (insert ?\n)
+      (setq depth (hare--form-svn-widget 'depth
+		    :value 'infinity))
+      (insert ?\n)
+      (setq no-ignore (hare--form-svn-widget 'checkbox
+			:doc "Don't apply ignore rules to implicitly visited items.
 Subversion uses ignore patterns to determine which items should be
 skipped as part of a larger recursive operation.  If this option is
 enabled, operate on all the files and directories present."))
-	(insert ?\n)
-	(setq externals (hare--form-svn-widget 'checkbox
-			  :doc "Ignore external definitions."))
-	(insert ?\n)
-	(setq quiet (hare--form-svn-widget 'checkbox
-		      :doc "Print only summary information about locally modified items."))
-	(insert ?\n)
-	(setq updates (hare--form-svn-widget 'checkbox
-			:doc "Print working copy revision and server out-of-date information."))
-	(insert ?\n)
-	(setq verbose (hare--form-svn-widget 'checkbox
-			:doc "Print full revision information on every item."))
-	(hare--form-horizontal-line)
-	(setq targets (hare--form-paths paths t))
-	()))))
+      (insert ?\n)
+      (setq externals (hare--form-svn-widget 'checkbox
+			:doc "Ignore external definitions."))
+      (insert ?\n)
+      (setq quiet (hare--form-svn-widget 'checkbox
+		    :doc "Print only summary information about locally modified items."))
+      (insert ?\n)
+      (setq updates (hare--form-svn-widget 'checkbox
+		      :doc "Print working copy revision and server out-of-date information."))
+      (insert ?\n)
+      (setq verbose (hare--form-svn-widget 'checkbox
+		      :doc "Print full revision information on every item."))
+      (hare--form-horizontal-line)
+      (setq targets (hare--form-paths paths t))
+      ())))
 
 (defun hare--svn-cleanup (targets &rest options)
   "Run the ‘svn cleanup’ command."
@@ -1655,34 +1649,35 @@ enabled, operate on all the files and directories present."))
   "Recursively clean up the working copy."
   (interactive "P")
   (let ((paths (hare--svn-collect-paths
-		:ignore-selected t)))
-    (let ((default-directory (hare--paths-vc-root paths)))
-      (hare--form (cleanup unversioned ignored vacuum externals)
-	  "Recursively clean up the working copy."
-	  (hare--svn-cleanup default-directory ;see ‘hare--form-special’
-			     :cleanup cleanup
-			     :remove-unversioned unversioned
-			     :remove-ignored ignored
-			     :vacuum-pristines vacuum
-			     :include-externals externals)
-	(setq cleanup (hare--form-svn-widget 'checkbox
-			:doc "Clean up working copy status.
+		:collect-parent t)))
+    (hare--form (targets cleanup unversioned ignored vacuum externals)
+	"Recursively clean up the working copy."
+	(hare--svn-cleanup targets
+			   :cleanup cleanup
+			   :remove-unversioned unversioned
+			   :remove-ignored ignored
+			   :vacuum-pristines vacuum
+			   :include-externals externals)
+      (setq cleanup (hare--form-svn-widget 'checkbox
+		      :doc "Clean up working copy status.
 Remove all write locks (shown as ‘L’ by the ‘svn status’ command) from
 the working copy.  Usually, this is only necessary if a Subversion client
 has crashed while using the working copy, leaving it in an unusable state."
-			:value t))
-	(insert ?\n)
-	(setq unversioned (hare--form-svn-widget 'checkbox
-			    :doc "Remove unversioned files and directories."))
-	(setq ignored (hare--form-svn-widget 'checkbox
-			:doc "Remove ignored files and directories."))
-	(setq vacuum (hare--form-svn-widget 'checkbox
-		       :doc "Remove unreferenced original files from ‘.svn’ directory."))
-	(insert ?\n)
-	(setq externals (hare--form-svn-widget 'checkbox
-			  :doc "Include external definitions.
+		      :value t))
+      (insert ?\n)
+      (setq unversioned (hare--form-svn-widget 'checkbox
+			  :doc "Remove unversioned files and directories."))
+      (setq ignored (hare--form-svn-widget 'checkbox
+		      :doc "Remove ignored files and directories."))
+      (setq vacuum (hare--form-svn-widget 'checkbox
+		     :doc "Remove unreferenced original files from ‘.svn’ directory."))
+      (insert ?\n)
+      (setq externals (hare--form-svn-widget 'checkbox
+			:doc "Include external definitions.
 Also operate on externals defined by ‘svn:externals’ properties."))
-	()))))
+      (hare--form-horizontal-line)
+      (setq targets (hare--form-paths paths nil))
+      ())))
 
 (defconst hare--svn-menu
   (let ((menu (make-sparse-keymap "HareSVN")))
