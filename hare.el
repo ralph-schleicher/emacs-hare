@@ -511,7 +511,7 @@ Return value is a HareSVN paths structure."
       (when-let ((admin (condition-case nil
 			    (vc-call-backend backend 'find-admin-dir root)
 			  (vc-not-supported))))
-	(setf admin (file-name-as-directory (expand-file-name admin)))
+	(setq admin (file-name-as-directory (expand-file-name admin)))
 	(setq children (cl-delete-if (lambda (child)
 				       (string-prefix-p admin child hare--file-name-ignore-case))
 				     children))))
