@@ -422,10 +422,13 @@ If keyword argument REQUIRE-SELECTED is non-nil, signal an error
  signal an error.
 
 After that the parent directory will be fixed.  If VC options
-are enabled, the parent directory will be adjusted so that it is
-a registered directory within the repository.  Additionally, all
-child items outside the repository are silently ignored.  If no
-children remain, collect the parent.
+are enabled, the parent directory will be adjusted so that it
+is a registered directory within the repository.  If the parent
+moves upwards in the directory hierarchy and the collection is
+empty, the current working directory, i.e. the initial parent,
+becomes a child item.  Additionally, all child items outside
+the repository are silently removed.  If no children remain,
+collect the parent.
 
 If keyword argument COLLECT-PARENT is non-nil, unconditionally
  add the parent to the collection.
@@ -686,7 +689,7 @@ initialized as follows.
    * The documentation string is inserted at the beginning of the form
      buffer.
 
-   * A cancel and submit push button is inserted.  Both buttons destory
+   * A cancel and submit push button is inserted.  Both buttons destroy
      the form buffer.  After the form buffer is destroyed, the submit
      button evaluates SUBMIT-FORM in an environment where the values of
      the form's named widgets are bound to variables of the same name.
@@ -1422,7 +1425,7 @@ Return true if the command succeeds."
     status))
 
 (defun hare--svn-update (targets &rest options)
-  "Run the ‘svn udpate’ command."
+  "Run the ‘svn update’ command."
   (hare--with-process-window (buffer '(svn-update))
     (apply #'hare--svn buffer 0 targets "update"
 	   (nconc (when-let ((revision (plist-get options :revision)))
