@@ -604,8 +604,10 @@ Return value is a HareSVN paths structure."
 (defun hare--trim-log-message (&optional final-newline)
   "Delete superfluous whitespace in a log message buffer.
 
-Optional argument FINAL-NEWLINE has the same semantics as
- the user option ‘log-edit-require-final-newline’.
+If optional argument FINAL-NEWLINE is nil, delete all final newline
+ characters.  Otherwise, preserve one explicit final newline character.
+ If FINAL-NEWLINE is the symbol ‘log-edit-require-final-newline’, apply
+ the same semantics as documented for this user option.
 
 This function does not preserve point."
   ;; Delete trailing whitespace.
@@ -620,11 +622,13 @@ This function does not preserve point."
   ;; Delete trailing empty lines.
   (goto-char (point-max))
   (skip-chars-backward "\n")
-  (unless (eobp)
+  (when (and (not (eobp)) final-newline)
     (forward-char 1)) ;preserve final newline
   (unless (eobp)
     (delete-region (point) (point-max)))
   ;; Check for final newline.
+  (when (eq final-newline 'log-edit-require-final-newline)
+    (setq final-newline log-edit-require-final-newline))
   (when (and (> (point-max) (point-min))
 	     (/= (char-before (point-max)) ?\n)
 	     (or (eq final-newline t)
@@ -648,7 +652,7 @@ Second argument MESSAGE is the log message."
 	   (progn
 	     (with-temp-file ,file
 	       (insert (or ,message ""))
-	       (hare--trim-log-message log-edit-require-final-newline)
+	       (hare--trim-log-message 'log-edit-require-final-newline)
 	       (log-edit-remember-comment))
 	     ,@body)
 	 (ignore-errors
@@ -1024,6 +1028,7 @@ Return value is a ‘checklist’ widget."
     (with-temp-buffer
       (log-edit-previous-comment arg)
       (when (buffer-modified-p)
+	(hare--trim-log-message)
 	(widget-value-set message (buffer-substring-no-properties
 				   (point-min) (point-max)))))))
 
@@ -1034,6 +1039,7 @@ Return value is a ‘checklist’ widget."
     (with-temp-buffer
       (log-edit-next-comment arg)
       (when (buffer-modified-p)
+	(hare--trim-log-message)
 	(widget-value-set message (buffer-substring-no-properties
 				   (point-min) (point-max)))))))
 
