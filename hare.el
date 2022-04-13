@@ -32,6 +32,7 @@
 (require 'vc-dir)
 (require 'dired)
 (require 'subr-x)
+(require 'log-edit)
 (require 'wid-edit)
 (require 'cus-edit)
 (require 'shell)
@@ -598,6 +599,61 @@ Return value is a HareSVN paths structure."
 					  (memq state list))
 					hare--vc-states)))))))
 
+;;;; Log Messages
+
+(defun hare--trim-log-message (&optional final-newline)
+  "Delete superfluous whitespace in a log message buffer.
+
+Optional argument FINAL-NEWLINE has the same semantics as
+ the user option ‘log-edit-require-final-newline’.
+
+This function does not preserve point."
+  ;; Delete trailing whitespace.
+  (goto-char (point-min))
+  (while (re-search-forward "[ \t]+$" nil t)
+    (replace-match "" t t))
+  ;; Delete leading empty lines.
+  (goto-char (point-min))
+  (skip-chars-forward "\n")
+  (unless (bobp)
+    (delete-region (point-min) (point)))
+  ;; Delete trailing empty lines.
+  (goto-char (point-max))
+  (skip-chars-backward "\n")
+  (unless (eobp)
+    (forward-char 1)) ;preserve final newline
+  (unless (eobp)
+    (delete-region (point) (point-max)))
+  ;; Check for final newline.
+  (when (and (> (point-max) (point-min))
+	     (/= (char-before (point-max)) ?\n)
+	     (or (eq final-newline t)
+		 (and final-newline
+		      (y-or-n-p
+		       "Log message does not end in newline.  Add one? "))))
+    (goto-char (point-max))
+    (insert ?\n)))
+
+(cl-defmacro hare--with-log-message-file ((file-var message) &body body)
+  "Write a log message to a temporary file, then evaluate BODY.
+
+If first argument FILE-VAR is non-nil, bind the temporary file name to
+ this variable so that BODY can use it.
+Second argument MESSAGE is the log message."
+  (declare (indent 1))
+  (let ((file (gensym "file")))
+    `(let* ((,file (make-temp-file "log"))
+ 	    ,@(when file-var `((,file-var ,file))))
+       (unwind-protect
+	   (progn
+	     (with-temp-file ,file
+	       (insert (or ,message ""))
+	       (hare--trim-log-message log-edit-require-final-newline)
+	       (log-edit-remember-comment))
+	     ,@body)
+	 (ignore-errors
+	   (delete-file ,file))))))
+
 ;;;; Forms
 
 (defvar hare--temp-buffer-name "*HareSVN*"
@@ -957,6 +1013,83 @@ Return value is a ‘checklist’ widget."
      (when condition
        (widget-checkbox-action button))))
   ())
+
+(defvar-local hare--form-log-edit-widget nil
+  "The text widget for editing the log message.")
+
+(defun hare--form-log-edit-previous-comment (arg)
+  "Like ‘log-edit-previous-comment’."
+  (interactive "*p")
+  (when-let ((message hare--form-log-edit-widget))
+    (with-temp-buffer
+      (log-edit-previous-comment arg)
+      (when (buffer-modified-p)
+	(widget-value-set message (buffer-substring-no-properties
+				   (point-min) (point-max)))))))
+
+(defun hare--form-log-edit-next-comment (arg)
+  "Like ‘log-edit-next-comment’."
+  (interactive "*p")
+  (when-let ((message hare--form-log-edit-widget))
+    (with-temp-buffer
+      (log-edit-next-comment arg)
+      (when (buffer-modified-p)
+	(widget-value-set message (buffer-substring-no-properties
+				   (point-min) (point-max)))))))
+
+(defvar hare--form-log-edit-keymap
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map widget-text-keymap)
+    (define-key map (kbd "M-p") 'hare--form-log-edit-previous-comment)
+    (define-key map (kbd "M-n") 'hare--form-log-edit-next-comment)
+    map)
+  "Keymap for editing log messages in a form.")
+
+(defun hare--form-log-edit-apply-command (command)
+  "Apply a log message command."
+  (when-let ((message hare--form-log-edit-widget))
+    (cl-ecase command
+      (edit-clear
+       ;; Clear log message.
+       (widget-value-set message ""))
+      (edit-trim
+       ;; Delete superfluous whitespace.
+       (let* ((old (widget-value message))
+	      (new (with-temp-buffer
+		     (insert old)
+		     (hare--trim-log-message)
+		     (buffer-substring (point-min) (point-max)))))
+	 (unless (string-equal old new)
+	   (widget-value-set message new))))
+      ())))
+
+(defun hare--form-log-edit ()
+  "Insert a log message field into the form.
+
+Return value is a ‘text’ widget."
+  (unless (bolp)
+    (insert ?\n))
+  (insert "Log Message: ")
+  (apply #'widget-create 'menu-choice
+	 :format "%[ %t %]"
+	 :tag "Edit"
+	 :notify (lambda (widget &rest _ignore)
+		   (hare--form-log-edit-apply-command
+		    (widget-get widget :value)))
+	 '((const
+	    :value edit-clear
+	    :format "%t"
+	    :tag "Clear Log Message")
+	   (const
+	    :value edit-trim
+	    :format "%t"
+	    :tag "Delete Superfluous Whitespace")))
+  (insert ?\n ?\n)
+  (setq hare--form-log-edit-widget
+	(widget-create 'text
+		       :value ""
+		       :format "%v"
+		       :keymap hare--form-log-edit-keymap)))
 
 (defun hare--form-svn-widget (type &rest options)
   "Insert a Subversion widget into the form.
@@ -1424,6 +1557,49 @@ Return true if the command succeeds."
     ;; Return value.
     status))
 
+(defun hare--svn-commit (targets message &rest options)
+  "Run the ‘svn commit’ command."
+  (hare--with-log-message-file (file message)
+    (hare--with-process-window (buffer '(svn-commit))
+      (apply #'hare--svn buffer 0 targets "commit"
+	     (nconc (when-let ((targets (plist-get options :targets)))
+		      (list "--targets" (hare--string targets)))
+		    (when-let ((depth (plist-get options :depth)))
+		      (list "--depth" (hare--string depth)))
+		    (when (plist-get options :no-unlock)
+		      (list "--no-unlock"))
+		    (when (plist-get options :include-externals)
+		      (list "--include-externals"))
+		    (list "--file" file "--force-log"))))))
+
+(defun hare-svn-commit (&optional _arg)
+  "Send changes from your working copy to the repository."
+  (interactive "P")
+  (let ((paths (hare--svn-collect-paths
+		:vc-state t)))
+    (hare--form (targets message depth no-unlock externals)
+	"Send changes from your working copy to the repository."
+	(hare--svn-commit targets message
+			  :depth depth
+			  :no-unlock no-unlock
+			  :include-externals externals)
+      (setq depth (hare--form-svn-widget 'depth
+		    :value 'empty))
+      (insert ?\n)
+      (setq no-unlock (hare--form-svn-widget 'checkbox
+			:doc "Don't unlock targets.
+The default is to unlock any locked target after a successful commit."))
+      (insert ?\n)
+      (setq externals (hare--form-svn-widget 'checkbox
+			:doc "Include external definitions.
+Also operate on externals defined by ‘svn:externals’ properties.
+Do not commit externals with a fixed revision."))
+      (hare--form-horizontal-line)
+      (setq targets (hare--form-paths paths t))
+      (hare--form-horizontal-line)
+      (setq message (hare--form-log-edit))
+      ())))
+
 (defun hare--svn-update (targets &rest options)
   "Run the ‘svn update’ command."
   (hare--with-process-window (buffer '(svn-update))
@@ -1693,6 +1869,9 @@ Also operate on externals defined by ‘svn:externals’ properties."))
     (bindings--define-key menu [hare-svn-update]
       '(menu-item "Update..." hare-svn-update
 		  :help "Update your working copy"))
+    (bindings--define-key menu [hare-svn-commit]
+      '(menu-item "Commit..." hare-svn-commit
+		  :help "Send changes from your working copy to the repository"))
     menu)
   "HareSVN menu for Subversion.")
 
