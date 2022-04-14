@@ -1536,13 +1536,15 @@ See ‘hare--collect-paths’ for the meaning of OPTIONS."
 Return true if the command succeeds."
   (unless (listp vc-svn-global-switches)
     (error "User option ‘vc-svn-global-switches’ is not a list, please fix it"))
-  (let ((status nil))
+  (let ((came-from (current-buffer))
+	(status nil))
     (save-selected-window
       (with-current-buffer buffer
 	(let ((inhibit-read-only t)
 	      (comint-file-name-quote-list shell-file-name-quote-list))
 	  (unless (derived-mode-p 'compilation-mode)
 	    (compilation-mode 1))
+	  (goto-char (point-max))
 	  (when (bobp)
 	    (insert "-*- mode: compilation; ")
 	    (when (hare--paths-p targets)
@@ -1597,6 +1599,20 @@ Return true if the command succeeds."
 				     'font-lock-face 'success)
 			 (format " exit status %s" status))))
 	  (insert ?\n))))
+    ;; Update VC states.
+    (let ((backend 'SVN))
+      (cond ((hare--paths-p targets)
+	     (dolist (child (hare--paths-children targets))
+	       (vc-state-refresh (hare--path-absolute child) backend)))
+	    ((listp targets)
+	     (dolist (target targets)
+	       (vc-state-refresh target backend)))
+	    ((stringp targets)
+	     (vc-state-refresh targets backend))))
+    (when (buffer-live-p came-from)
+      (with-current-buffer came-from
+	(cond ((derived-mode-p 'dired-mode)
+	       (dired-revert)))))
     ;; Return value.
     status))
 
