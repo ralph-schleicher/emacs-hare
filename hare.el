@@ -43,7 +43,7 @@
   :group 'vc
   :group 'dired)
 
-(defsubst hare--vc-state (file-name)
+(defun hare--vc-state (file-name)
   "Return the HareSVN VC state of FILE-NAME.
 
 Value is the VC state symbol as returned by the ‘vc-state’ function,
@@ -52,7 +52,7 @@ other user."
   (when-let* ((backend (or vc-dir-backend
 			   (ignore-errors
 			     (vc-responsible-backend file-name))))
-	      (state (vc-state-refresh file-name backend)))
+	      (state (vc-state file-name backend)))
     (if (stringp state) 'locked state)))
 
 (defconst hare--vc-state-alist
