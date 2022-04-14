@@ -1531,118 +1531,72 @@ Signal an error if not within a working copy.
 See ‘hare--collect-paths’ for the meaning of OPTIONS."
   (apply #'hare--collect-paths :vc-backend 'SVN :vc-root t options))
 
-(defcustom hare-svn-interactive 'undefined
-  "Whether or not to run ‘svn’ commands in an interactive shell."
-  :type '(choice (const undefined) boolean)
-  :group 'hare)
-
 (defun hare--svn (buffer success targets command &rest options)
   "Execute a ‘svn’ command.
 Return true if the command succeeds."
   (unless (listp vc-svn-global-switches)
     (error "User option ‘vc-svn-global-switches’ is not a list, please fix it"))
-  (let ((shellp (if (eq hare-svn-interactive 'undefined)
-		    (setq hare-svn-interactive (not (member "--non-interactive" vc-svn-global-switches)))
-		  hare-svn-interactive))
-	(status nil))
+  (let ((status nil))
     (save-selected-window
       (with-current-buffer buffer
-	(if (not shellp)
-	    (let ((inhibit-read-only t)
-		  (comint-file-name-quote-list shell-file-name-quote-list))
-	      (unless (derived-mode-p 'compilation-mode)
-		(compilation-mode 1))
-	      (when (bobp)
-		(insert "-*- mode: compilation; ")
-		(when (hare--paths-p targets)
-		  (when-let ((root (hare--paths-vc-root targets)))
-		    (insert "default-directory: "
-			    (with-output-to-string (prin1 root))
-			    "; ")))
-		(insert "-*-" ?\n ?\n))
+	(let ((inhibit-read-only t)
+	      (comint-file-name-quote-list shell-file-name-quote-list))
+	  (unless (derived-mode-p 'compilation-mode)
+	    (compilation-mode 1))
+	  (when (bobp)
+	    (insert "-*- mode: compilation; ")
+	    (when (hare--paths-p targets)
+	      (when-let ((root (hare--paths-vc-root targets)))
+		(insert "default-directory: "
+			(with-output-to-string (prin1 root))
+			"; ")))
+	    (insert "-*-" ?\n ?\n))
+	  (unless (bolp)
+	    (insert ?\n))
+	  (when (hare--paths-p targets)
+	    (let ((parent (hare--paths-parent targets)))
+	      (insert "cd" ?\s (comint-quote-filename parent) ?\n)
+	      (cd parent)))
+	  (let ((arguments (append vc-svn-global-switches
+				   (when command (list command))
+				   options
+				   (cond ((hare--paths-p targets)
+					  (mapcar #'hare--path-relative
+						  (hare--paths-children targets)))
+					 ((listp targets)
+					  (mapcar #'expand-file-name targets))
+					 ((stringp targets)
+					  (list (expand-file-name targets)))))))
+	    ;; Show the command line.
+	    (insert (comint-quote-filename vc-svn-program))
+	    (dolist (argument arguments)
+	      (insert ?\s (comint-quote-filename argument)))
+	    (insert ?\n ?\n)
+	    (let ((mark (point)))
+	      (setq status (ignore-errors
+			     (apply #'call-process vc-svn-program nil (list buffer t) t arguments)))
 	      (unless (bolp)
 		(insert ?\n))
-	      (when (hare--paths-p targets)
-		(let ((parent (hare--paths-parent targets)))
-		  (insert "cd" ?\s (comint-quote-filename parent) ?\n)
-		  (cd parent)))
-	      (let ((arguments (append vc-svn-global-switches
-				       (when command (list command))
-				       options
-				       (cond ((hare--paths-p targets)
-					      (mapcar #'hare--path-relative
-						      (hare--paths-children targets)))
-					     ((listp targets)
-					      (mapcar #'expand-file-name targets))
-					     ((stringp targets)
-					      (list (expand-file-name targets)))))))
-		;; Show the command line.
-		(insert (comint-quote-filename vc-svn-program))
-		(dolist (argument arguments)
-		  (insert ?\s (comint-quote-filename argument)))
-		(insert ?\n ?\n)
-		(let ((mark (point)))
-		  (setq status (ignore-errors
-				 (apply #'call-process vc-svn-program nil (list buffer t) t arguments)))
-		  (unless (bolp)
-		    (insert ?\n))
-		  (when (< mark (point))
-		    (insert ?\n))))
-	      (cond ((null status)
-		     (insert (propertize "Failure:"
-					 'face 'error
-					 'font-lock-face 'error)
-			     " internal error"))
-		    ((> status success)
-		     (insert (propertize "Failure:"
-					 'face 'error
-					 'font-lock-face 'error)
-			     (format " exit status %s" status))
-		     ;; Clear return value.
-		     (setq status nil))
-		    (t
-		     (insert (propertize "Success:"
-					 'face 'success
-					 'font-lock-face 'success)
-			     (format " exit status %s" status))))
-	      (insert ?\n))
-	  ;; Interactive shell.
-	  (unless (derived-mode-p 'shell-mode)
-	    (setq buffer-read-only nil)
-	    (shell buffer)
-	    (compilation-shell-minor-mode 1))
-	  ;; Wait for the shell prompt and leave point after it.
-	  (let* ((process (get-buffer-process buffer))
-		 (last-output (process-mark process)))
-	    (save-excursion
-	      (goto-char last-output)
-	      ;; This is like ‘beginning-of-line’ but ignores
-	      ;; any text motion restrictions.
-	      (forward-line 0)
-	      (unless (looking-at shell-prompt-pattern)
-		(accept-process-output process)))
-	    ;; Leave point after the shell prompt.
-	    (goto-char last-output))
-	  ;; Insert the Subversion command.
-	  (insert (comint-quote-filename vc-svn-program))
-	  ;; Global options.
-	  (dolist (option vc-svn-global-switches)
-	    (insert ?\s option))
-	  ;; The ‘svn’ sub-command.
-	  (when command
-	    (insert ?\s command))
-	  ;; Sub-command options.
-	  (dolist (option options)
-	    (insert ?\s option))
-	  ;; Targets.
-	  (cond ((listp targets)
-		 (dolist (target targets)
-		   (insert ?\s (comint-quote-filename target))))
-		((stringp targets)
-		 (insert ?\s (comint-quote-filename targets))))
-	  ;; Run it.
-	  (comint-send-input nil t))
-	()))
+	      (when (< mark (point))
+		(insert ?\n))))
+	  (cond ((null status)
+		 (insert (propertize "Failure:"
+				     'face 'error
+				     'font-lock-face 'error)
+			 " internal error"))
+		((> status success)
+		 (insert (propertize "Failure:"
+				     'face 'error
+				     'font-lock-face 'error)
+			 (format " exit status %s" status))
+		 ;; Clear return value.
+		 (setq status nil))
+		(t
+		 (insert (propertize "Success:"
+				     'face 'success
+				     'font-lock-face 'success)
+			 (format " exit status %s" status))))
+	  (insert ?\n))))
     ;; Return value.
     status))
 
