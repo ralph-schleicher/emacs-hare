@@ -1018,6 +1018,48 @@ Return value is a ‘checklist’ widget."
        (widget-checkbox-action button))))
   ())
 
+(defun hare--form-fileset-from-paths (object &rest options)
+  "Create a VC fileset from a paths object.
+
+If keyword argument NOT-EMPTY is non-nil,
+ return nil if the fileset is empty.
+If keyword argument NO-MESSAGE is non-nil,
+ don't print a status message.
+
+Return nil if no fileset can be determined."
+  (if-let* ((type (cond ((widgetp object)
+			 (widget-type object))
+			((hare--paths-p object)
+			 'hare--paths)))
+	    (paths (cl-case type
+		     (checklist
+		      (widget-get object :hare-paths))
+		     (hare--paths
+		      object)))
+	    (backend (or (hare--paths-vc-backend paths)
+			 (vc-responsible-backend
+			  (hare--paths-vc-root paths) t)
+			 (vc-responsible-backend
+			  (hare--paths-parent paths) t))))
+      (let ((files (cl-case type
+		     (checklist
+		      (let (list)
+			(dolist (child (widget-get object :children))
+			  (when (widget-value (widget-get child :button))
+			    (push (hare--path-absolute (widget-value child)) list)))
+			(nreverse list)))
+		     (hare--paths
+		      (mapcar #'hare--path-absolute (hare--paths-children object))))))
+	(if (and (null files) (plist-get options :not-empty))
+	    (unless (plist-get options :no-message)
+	      (ignore (message "No files")))
+	  (list backend files)))
+    (unless (plist-get options :no-message)
+      (ignore (message "Can not determine any file")))))
+
+(defvar-local hare--form-paths-widget nil
+  "The checklist widget for selecting file names.")
+
 (defvar-local hare--form-log-edit-widget nil
   "The text widget for editing the log message.")
 
@@ -1043,11 +1085,30 @@ Return value is a ‘checklist’ widget."
 	(widget-value-set message (buffer-substring-no-properties
 				   (point-min) (point-max)))))))
 
+(defun hare--form-log-edit-show-diff ()
+  "Like ‘log-edit-show-diff’."
+  (interactive)
+  (when-let ((fileset (hare--form-fileset-from-paths
+		       hare--form-paths-widget
+		       :not-empty t)))
+    (vc-diff-internal nil fileset nil nil)))
+
+(defun hare--form-log-edit-show-files ()
+  "Like ‘log-edit-show-files’."
+  (interactive)
+  (when-let ((fileset (hare--form-fileset-from-paths
+		       hare--form-paths-widget
+		       :not-empty t)))
+    (let ((log-edit-listfun (lambda () (cl-second fileset))))
+      (log-edit-show-files))))
+
 (defvar hare--form-log-edit-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map widget-text-keymap)
     (define-key map (kbd "M-p") 'hare--form-log-edit-previous-comment)
     (define-key map (kbd "M-n") 'hare--form-log-edit-next-comment)
+    (define-key map (kbd "C-c C-d") 'hare--form-log-edit-show-diff)
+    (define-key map (kbd "C-c C-f") 'hare--form-log-edit-show-files)
     map)
   "Keymap for editing log messages in a form.")
 
@@ -1067,9 +1128,15 @@ Return value is a ‘checklist’ widget."
 		     (buffer-substring (point-min) (point-max)))))
 	 (unless (string-equal old new)
 	   (widget-value-set message new))))
+      (tools-diff
+       ;; Show file differences.
+       (hare--form-log-edit-show-diff))
+      (tools-files
+       ;; Show file names.
+       (hare--form-log-edit-show-files))
       ())))
 
-(defun hare--form-log-edit ()
+(defun hare--form-log-edit (paths)
   "Insert a log message field into the form.
 
 Return value is a ‘text’ widget."
@@ -1090,7 +1157,23 @@ Return value is a ‘text’ widget."
 	    :value edit-trim
 	    :format "%t"
 	    :tag "Delete Superfluous Whitespace")))
+  (insert ?\s)
+  (apply #'widget-create 'menu-choice
+	 :format "%[ %t %]"
+	 :tag "Tools"
+	 :notify (lambda (widget &rest _ignore)
+		   (hare--form-log-edit-apply-command
+		    (widget-get widget :value)))
+	 '((const
+	    :value tools-diff
+	    :format "%t"
+	    :tag "Show File Differences")
+	   (const
+	    :value tools-files
+	    :format "%t"
+	    :tag "Show File Names")))
   (insert ?\n ?\n)
+  (setq hare--form-paths-widget paths)
   (setq hare--form-log-edit-widget
 	(widget-create 'text
 		       :value ""
@@ -1603,7 +1686,7 @@ Do not commit externals with a fixed revision."))
       (hare--form-horizontal-line)
       (setq targets (hare--form-paths paths t))
       (hare--form-horizontal-line)
-      (setq message (hare--form-log-edit))
+      (setq message (hare--form-log-edit targets))
       ())))
 
 (defun hare--svn-update (targets &rest options)
