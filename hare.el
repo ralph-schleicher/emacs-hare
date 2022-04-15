@@ -1807,6 +1807,42 @@ target at depth ‘empty’, too."))
       (setq targets (hare--form-paths paths t))
       ())))
 
+(defun hare--svn-delete (targets message &rest options)
+  "Run the ‘svn delete’ command."
+  (hare--with-log-message-file (file message)
+    (hare--with-process-window (buffer '(svn-delete))
+      (apply #'hare--svn buffer 0 targets "delete"
+	     (nconc (when-let ((targets (plist-get options :targets)))
+		      (list "--targets" (hare--string targets)))
+		    (when (plist-get options :force)
+		      (list "--force"))
+		    (when (plist-get options :keep-local)
+		      (list "--keep-local"))
+		    (when (not (null message))
+		      (list "--file" file "--force-log")))))))
+
+(defun hare-svn-delete (&optional _arg)
+  "Remove files and directories from version control."
+  (interactive "P")
+  (let ((paths (hare--svn-collect-paths
+		:vc-state '(not removed unregistered nil)
+		:parent-items t)))
+    (hare--form (targets force)
+	"Remove files and directories from version control.
+
+Files and directories are only scheduled for removal.
+The actual removal occurs upon the next commit."
+	(hare--svn-delete targets
+			  :force force
+			  :keep-local t) ;schedule for removal
+      (setq force (hare--form-svn-widget 'checkbox
+		    :doc "Remove modified files and directories.
+If this option is enabled, files and directories are removed regardless of
+their version control state.  Otherwise, modified items are not removed."))
+      (hare--form-horizontal-line)
+      (setq targets (hare--form-paths paths t))
+      ())))
+
 (defun hare--svn-status (targets &rest options)
   "Run the ‘svn status’ command."
   (hare--with-process-window (buffer '(svn-status))
@@ -1938,6 +1974,9 @@ Also operate on externals defined by ‘svn:externals’ properties."))
     (bindings--define-key menu [hare-svn-status]
       '(menu-item "Status..." hare-svn-status
 		  :help "Print the status of working copy files and directories"))
+    (bindings--define-key menu [hare-svn-delete]
+      '(menu-item "Delete..." hare-svn-delete
+		  :help "Remove files and directories from version control"))
     (bindings--define-key menu [hare-svn-add]
       '(menu-item "Add..." hare-svn-add
 		  :help "Put files and directories under version control"))
