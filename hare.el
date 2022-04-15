@@ -1843,6 +1843,33 @@ their version control state.  Otherwise, modified items are not removed."))
       (setq targets (hare--form-paths paths t))
       ())))
 
+(defun hare--svn-revert (targets &rest options)
+  "Run the ‘svn revert’ command."
+  (hare--with-process-window (buffer '(svn-revert))
+    (apply #'hare--svn buffer 0 targets "revert"
+	   (nconc (when-let ((targets (plist-get options :targets)))
+		    (list "--targets" (hare--string targets)))
+		  (when-let ((depth (plist-get options :depth)))
+		    (list "--depth" (hare--string depth)))
+		  (when (plist-get options :quiet)
+		    (list "--quiet"))))))
+
+(defun hare-svn-revert (&optional _arg)
+  "Undo local modifications."
+  (interactive "P")
+  (let ((paths (hare--svn-collect-paths
+		:vc-state '(not up-to-date unregistered nil)
+		:parent-items t)))
+    (hare--form (targets depth)
+	"Undo local modifications."
+	(hare--svn-revert targets
+			  :depth depth)
+      (setq depth (hare--form-svn-widget 'depth
+		    :value 'empty))
+      (hare--form-horizontal-line)
+      (setq targets (hare--form-paths paths t))
+      ())))
+
 (defun hare--svn-status (targets &rest options)
   "Run the ‘svn status’ command."
   (hare--with-process-window (buffer '(svn-status))
@@ -1974,6 +2001,9 @@ Also operate on externals defined by ‘svn:externals’ properties."))
     (bindings--define-key menu [hare-svn-status]
       '(menu-item "Status..." hare-svn-status
 		  :help "Print the status of working copy files and directories"))
+    (bindings--define-key menu [hare-svn-revert]
+      '(menu-item "Revert..." hare-svn-revert
+		  :help "Undo local modifications"))
     (bindings--define-key menu [hare-svn-delete]
       '(menu-item "Delete..." hare-svn-delete
 		  :help "Remove files and directories from version control"))
