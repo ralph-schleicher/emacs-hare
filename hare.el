@@ -1832,7 +1832,7 @@ target at depth ‘empty’, too."))
 
 Files and directories are only scheduled for removal.
 The actual removal occurs upon the next commit."
-	(hare--svn-delete targets
+	(hare--svn-delete targets nil
 			  :force force
 			  :keep-local t) ;schedule for removal
       (setq force (hare--form-svn-widget 'checkbox
