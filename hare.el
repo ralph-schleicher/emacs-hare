@@ -1417,6 +1417,14 @@ Exclude the immediate target of the operation from the working copy.")))))))
 
 ;;;; Process Buffer
 
+;;;###autoload
+(define-derived-mode hare-process-mode special-mode "HareSVN-Process"
+  "Major mode for HareSVN process buffers."
+  :group 'hare
+  :syntax-table nil
+  :abbrev-table nil
+  :interactive nil)
+
 (defcustom hare-delete-process-window '(not svn-status)
   "Whether or not to delete the process window after an operation.
 This option only has an effect if the process succeeds.
@@ -1509,7 +1517,10 @@ If BODY returns non-nil, delete the process window."
 	(status (gensym "status")))
     `(let* ((,buffer (window-buffer (hare--temp-buffer-window "*HareSVN Process*")))
 	    ,@(when buffer-var `((,buffer-var ,buffer)))
-	    (,status (progn ,@body)))
+	    (,status (progn
+		       (with-current-buffer ,buffer
+			 (hare-process-mode))
+		       ,@body)))
        (when ,status
 	 (hare--delete-process-window ,buffer ,conditions)
 	 (message "HareSVN process succeeded"))
@@ -1558,11 +1569,11 @@ Return true if the command succeeds."
       (with-current-buffer buffer
 	(let ((inhibit-read-only t)
 	      (comint-file-name-quote-list shell-file-name-quote-list))
-	  (unless (derived-mode-p 'compilation-mode)
-	    (compilation-mode 1))
+	  (unless (derived-mode-p 'hare-process-mode)
+	    (hare-process-mode))
 	  (goto-char (point-max))
 	  (when (bobp)
-	    (insert "-*- mode: compilation; ")
+	    (insert "-*- mode: hare-process; ")
 	    (when (hare--paths-p targets)
 	      (when-let ((root (hare--paths-vc-root targets)))
 		(insert "default-directory: "
