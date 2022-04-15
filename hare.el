@@ -1998,9 +1998,13 @@ Also operate on externals defined by ‘svn:externals’ properties."))
     (bindings--define-key menu [hare-svn-cleanup]
       '(menu-item "Clean up..." hare-svn-cleanup
 		  :help "Recursively clean up the working copy"))
+    (bindings--define-key menu [hare--svn-separator-3]
+      menu-bar-separator)
     (bindings--define-key menu [hare-svn-status]
       '(menu-item "Status..." hare-svn-status
 		  :help "Print the status of working copy files and directories"))
+    (bindings--define-key menu [hare--svn-separator-2]
+      menu-bar-separator)
     (bindings--define-key menu [hare-svn-revert]
       '(menu-item "Revert..." hare-svn-revert
 		  :help "Undo local modifications"))
@@ -2010,6 +2014,8 @@ Also operate on externals defined by ‘svn:externals’ properties."))
     (bindings--define-key menu [hare-svn-add]
       '(menu-item "Add..." hare-svn-add
 		  :help "Put files and directories under version control"))
+    (bindings--define-key menu [hare--svn-separator-1]
+      menu-bar-separator)
     (bindings--define-key menu [hare-svn-update]
       '(menu-item "Update..." hare-svn-update
 		  :help "Update your working copy"))
