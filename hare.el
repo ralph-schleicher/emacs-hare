@@ -1762,6 +1762,38 @@ too."))
       (setq targets (hare--form-paths paths t))
       ())))
 
+(defun hare--svn-resolve (targets &rest options)
+  "Run the ‘svn resolve’ command."
+  (hare--with-process-window (buffer '(svn-resolve))
+    (apply #'hare--svn buffer 0 targets "resolve"
+	   (nconc (when-let ((targets (plist-get options :targets)))
+		    (list "--targets" (hare--string targets)))
+		  (when-let ((depth (plist-get options :depth)))
+		    (list "--depth" (hare--string depth)))
+		  (when-let ((accept (plist-get options :accept)))
+		    (list "--accept" (hare--string accept)))
+		  (when (plist-get options :quiet)
+		    (list "--quiet"))))))
+
+(defun hare-svn-resolve (&optional _arg)
+  "Resolve conflicts on working copy files or directories."
+  (interactive "P")
+  (let ((paths (hare--svn-collect-paths
+		:vc-state t)))
+    (hare--form (targets depth accept)
+	"Resolve conflicts on working copy files or directories."
+	(hare--svn-resolve targets
+			   :depth depth
+			   :accept accept)
+      (setq depth (hare--form-svn-widget 'depth
+		    :value 'empty))
+      (insert ?\n)
+      (setq accept (hare--form-svn-widget 'accept
+		     :value 'working))
+      (hare--form-horizontal-line)
+      (setq targets (hare--form-paths paths t))
+      ())))
+
 (defun hare--svn-add (targets &rest options)
   "Run the ‘svn add’ command."
   (hare--with-process-window (buffer '(svn-add))
@@ -2040,6 +2072,9 @@ Also operate on externals defined by ‘svn:externals’ properties."))
 		  :help "Put files and directories under version control"))
     (bindings--define-key menu [hare--svn-separator-1]
       menu-bar-separator)
+    (bindings--define-key menu [hare-svn-resolve]
+      '(menu-item "Resolve..." hare-svn-resolve
+		  :help "Resolve conflicts on working copy files or directories"))
     (bindings--define-key menu [hare-svn-update]
       '(menu-item "Update..." hare-svn-update
 		  :help "Update your working copy"))
