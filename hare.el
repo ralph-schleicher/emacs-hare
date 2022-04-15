@@ -239,6 +239,19 @@ Optional second argument TEXT-PROPERTIES are additional text properties."
       (setq cursor-type nil)
       (setq truncate-lines t))))
 
+(defun hare-refresh-vc-states ()
+  "Refresh the VC states and redisplay the current buffer."
+  (interactive)
+  (cond ((obarrayp vc-file-prop-obarray)
+	 (mapatoms (lambda (symbol)
+		     (let ((file (symbol-name symbol)))
+		       (when-let ((backend (vc-backend file)))
+			 (vc-state-refresh file backend))))
+		   vc-file-prop-obarray)))
+  (cond ((derived-mode-p 'dired-mode)
+	 (revert-buffer)))
+  ())
+
 ;;;; Dired Buffers
 
 (defcustom hare-dired-hide-vc-headers "^\\(working directory\\):"
@@ -342,7 +355,7 @@ revision number and status are visualized."
 	 (add-hook 'dired-after-readin-hook 'hare--dired-after-readin t t))
 	(t
 	 (remove-hook 'dired-after-readin-hook 'hare--dired-after-readin t)))
-  (dired-revert))
+  (revert-buffer))
 
 ;;;; Paths
 
@@ -1612,7 +1625,7 @@ Return true if the command succeeds."
     (when (buffer-live-p came-from)
       (with-current-buffer came-from
 	(cond ((derived-mode-p 'dired-mode)
-	       (dired-revert)))))
+	       (revert-buffer)))))
     ;; Return value.
     status))
 
