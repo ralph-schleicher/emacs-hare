@@ -1,7 +1,8 @@
 #+STARTUP: inlineimages
 
 * HareSVN
-Work in progress.
+This is work in progress.  However, the functionality and maturity is
+sufficient for HareSVN development itself.
 
 At the end HareSVN should work similar to TortoiseSVN so that most
 version control operations can be performed directly in Dired, i.e.
@@ -10,13 +11,51 @@ control interface.
 
 [[./doc/Screenshot1.png]]
 
+** Context Menu
+The HareSVN context menu shall provide the following commands.
+
+- [X] commit
+- [X] update
+- [ ] resolve
+- [X] --
+- [X] add
+- [ ] import
+- [ ] rename
+- [X] delete
+- [X] revert
+- [ ] ignore
+- [ ] get lock
+- [ ] release lock
+- [X] --
+- [ ] diff
+- [ ] show log
+- [X] check for mod
+- [X] --
+- [ ] branch/tag
+- [ ] switch
+- [ ] merge
+- [ ] --
+- [X] cleanup
+- [ ] relocate
+
 ** Forms
 Subversion commands are invoked via descriptive dialogs.
 
 [[./doc/svn-update-form.png]]
 
+** Command Execution
+The process buffer captures information about the executed version
+control command.  The window closes automatically when the command
+succeeds.  Of course, this feature can be customized.
+
+[[./doc/svn-status-process.png]]
+
 ** To Do
 - [X] Add context menu to run version control commands.
+- [ ] Get rid of all compiler warnings; see ‘make check’.
+- [ ] Merge Subversion targets into --targets command line option.
+- [ ] Conditionally show/hide context menu entries.
+- [ ] Expand subdirectories in paths widget.
 
 ** See Also
 - https://github.com/dgutov/diff-hl :: diff-hl-dired-mode
