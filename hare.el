@@ -1204,7 +1204,7 @@ Return value is the widget handle."
   (cl-case type
     (accept
      (apply #'widget-create 'menu-choice
-	    :value 'postpone
+	    :value (or (plist-get options :value) 'postpone)
 	    :tag "Conflict Resolution"
 	    :format "%t %[ Value Menu %]: %v"
 	    :help-echo "Define the action for automatic conflict resolution"
