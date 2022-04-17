@@ -43,16 +43,22 @@
   :group 'vc
   :group 'dired)
 
-(defun hare--vc-state (file-name)
-  "Return the HareSVN VC state of FILE-NAME.
+(defun hare--vc-state (file backend)
+  "Return the HareSVN VC state of FILE.
 
 Value is the VC state symbol as returned by the ‘vc-state’ function,
 or ‘locked’ if the VC state indicates that the file is locked by some
 other user."
-  (when-let* ((backend (or vc-dir-backend
-			   (ignore-errors
-			     (vc-responsible-backend file-name))))
-	      (state (vc-state file-name backend)))
+  (let ((state (vc-state file backend)))
+    (if (stringp state) 'locked state)))
+
+(defun hare--vc-state-refresh (file backend)
+  "Return the updated HareSVN VC state of FILE.
+
+Value is the VC state symbol as returned by the ‘vc-state’ function,
+or ‘locked’ if the VC state indicates that the file is locked by some
+other user."
+  (let ((state (vc-state-refresh file backend)))
     (if (stringp state) 'locked state)))
 
 (defconst hare--vc-state-alist
@@ -338,7 +344,7 @@ lines."
       (while (not (eobp))
 	(when (dired-move-to-filename)
 	  (let* ((file (dired-get-filename nil t))
-      		 (state (and file vc-dir-backend (hare--vc-state file))))
+      		 (state (and file vc-dir-backend (hare--vc-state file vc-dir-backend))))
 	    (hare--insert-icon state `(keymap ,hare--dired-icon-keymap))
 	    (insert ?\s)))
 	(forward-line 1)))))
@@ -542,7 +548,7 @@ signal an error unless keyword argument NO-CHILDREN is non-nil."
     (when (not (null backend))
       (let ((path parent))
 	(while (and (hare--file-name-lessp root parent)
-		    (memq (vc-state-refresh parent backend) '(ignored unregistered nil)))
+		    (memq (hare--vc-state-refresh parent backend) '(ignored unregistered nil)))
 	  (setq parent (file-name-directory (directory-file-name parent))))
 	(when (and (hare--file-name-lessp parent path)
 		   (null children))
@@ -573,13 +579,13 @@ signal an error unless keyword argument NO-CHILDREN is non-nil."
 	     (let (list state)
 	       (if (not (eq (car vc-state) 'not))
 		   (dolist (child children)
-		     (setq state (vc-state-refresh child backend))
+		     (setq state (hare--vc-state-refresh child backend))
 		     (when (or (memq state vc-state) (hare--file-name-equal child parent))
 		       (push (cons child state) list)))
 		 ;; Drop ‘not’.
 		 (setq vc-state (cdr vc-state))
 		 (dolist (child children)
-		   (setq state (vc-state-refresh child backend))
+		   (setq state (hare--vc-state-refresh child backend))
 		   (when (or (not (memq state vc-state)) (hare--file-name-equal child parent))
 		     (push (cons child state) list))))
 	       (setq children (nreverse list))))
@@ -588,7 +594,7 @@ signal an error unless keyword argument NO-CHILDREN is non-nil."
 	     (cl-do ((cell children #'cdr))
 		 ((consp cell))
 	       (let ((child (car cell)))
-		 (setcar cell (cons child (vc-state-refresh child backend))))))))
+		 (setcar cell (cons child (hare--vc-state-refresh child backend))))))))
     ;; Create the HareSVN paths structure.
     (unless (or children (plist-get options :no-children))
       (error "No path"))
