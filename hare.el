@@ -388,6 +388,13 @@ Case is not significant if optional argument IGNORE-CASE is non-nil."
   "Like ‘hare--string-lessp’ but consider ‘hare--file-name-ignore-case’."
   (hare--string-lessp name1 name2 hare--file-name-ignore-case))
 
+(defun hare--expand-file-name (relative directory)
+  "Like ‘expand-file-name’ but mark directories as such."
+  (let ((absolute (expand-file-name relative directory)))
+    (if (and (file-directory-p absolute) (not (file-symlink-p absolute)))
+	(file-name-as-directory absolute)
+      absolute)))
+
 (cl-defstruct (hare--path
 	       (:constructor nil)
 	       (:constructor hare--make-path)
@@ -479,19 +486,13 @@ signal an error unless keyword argument NO-CHILDREN is non-nil."
 		 children (cond ((plist-get options :ignore-selected)
 				 ())
 				((plist-get options :ignore-marks)
-				 (when-let* ((relative (dired-get-filename t t))
-					     (absolute (expand-file-name relative parent)))
-				   (if (and (file-directory-p absolute) (not (file-symlink-p absolute)))
-				       (list (file-name-as-directory absolute))
-				     (list absolute))))
+				 (when-let ((relative (dired-get-filename t t)))
+				   (hare--expand-file-name relative parent)))
 				((delq nil (dired-map-over-marks
 					    ;; Expand ‘.’ and ‘..’ and mark directory
 					    ;; file names as directories.
-					    (when-let* ((relative (dired-get-filename t t))
-							(absolute (expand-file-name relative parent)))
-					      (if (and (file-directory-p absolute) (not (file-symlink-p absolute)))
-						  (file-name-as-directory absolute)
-						absolute))
+					    (when-let ((relative (dired-get-filename t t)))
+					      (hare--expand-file-name relative parent))
 					    ()))))))
 	  (buffer-file-name
 	   (let ((path (expand-file-name buffer-file-name)))
@@ -567,10 +568,7 @@ signal an error unless keyword argument NO-CHILDREN is non-nil."
       (setcdr children (sort (delq nil (mapcar (lambda (relative)
 						 (unless (cl-member relative vc-directory-exclusion-list
 								    :test #'hare--file-name-equal)
-      						   (let ((absolute (expand-file-name relative parent)))
-						     (if (and (file-directory-p absolute) (not (file-symlink-p absolute)))
-							 (file-name-as-directory absolute)
-						       absolute))))
+      						   (hare--expand-file-name relative parent)))
 					       (directory-files parent nil directory-files-no-dot-files-regexp t)))
 			     #'hare--file-name-lessp)))
     ;; Apply filters.
