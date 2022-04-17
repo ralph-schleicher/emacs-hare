@@ -436,8 +436,8 @@ This type is only used as a child item of a HareSVN paths structure."
    :documentation "The top-level working copy directory file name.")
   (vc-backend nil
    :documentation "The responsible VC backend.")
-  (vc-states ()
-   :documentation "The unique VC states of the children."))
+  (vc-state ()
+   :documentation "The applicable VC state filter."))
 
 (defun hare--collect-paths (&rest options)
   "Collect paths, i.e. files and directories.
@@ -614,14 +614,8 @@ signal an error unless keyword argument NO-CHILDREN is non-nil."
 			 children)
        :vc-root root
        :vc-backend backend
-       :vc-states (when (consp (car children))
-		    (let (list)
-		      (dolist (child children)
-			(cl-pushnew (cdr child) list))
-		      ;; Same order as in ‘hare--vc-states’.
-		      (cl-remove-if-not (lambda (state)
-					  (memq state list))
-					hare--vc-states)))))))
+       :vc-state (let ((state (plist-get options :vc-state)))
+		   (if (consp state) (copy-sequence state) state))))))
 
 ;;;; Log Messages
 
@@ -967,7 +961,7 @@ Return value is a ‘checklist’ widget."
 				    (widget-get child :value))
 				   (widget-get child :button)))))
                    " Folders ")
-    (when (hare--paths-vc-states paths)
+    (when (hare--paths-vc-state paths)
       (insert ?\s)
       (apply #'widget-create 'menu-choice
 	     :format "%[ %t %]"
