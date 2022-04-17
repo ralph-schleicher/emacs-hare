@@ -395,6 +395,15 @@ Case is not significant if optional argument IGNORE-CASE is non-nil."
 	(file-name-as-directory absolute)
       absolute)))
 
+(defun hare--directory-files (directory)
+  "Like ‘directory-files’ but ignore VC administration directories."
+  (sort (delq nil (mapcar (lambda (relative)
+			    (unless (cl-member relative vc-directory-exclusion-list
+					       :test #'hare--file-name-equal)
+			      (hare--expand-file-name relative directory)))
+			  (directory-files directory nil directory-files-no-dot-files-regexp t)))
+	#'hare--file-name-lessp))
+
 (cl-defstruct (hare--path
 	       (:constructor nil)
 	       (:constructor hare--make-path)
@@ -487,7 +496,7 @@ signal an error unless keyword argument NO-CHILDREN is non-nil."
 				 ())
 				((plist-get options :ignore-marks)
 				 (when-let ((relative (dired-get-filename t t)))
-				   (hare--expand-file-name relative parent)))
+				   (list (hare--expand-file-name relative parent))))
 				((delq nil (dired-map-over-marks
 					    ;; Expand ‘.’ and ‘..’ and mark directory
 					    ;; file names as directories.
@@ -565,12 +574,7 @@ signal an error unless keyword argument NO-CHILDREN is non-nil."
     (when (and (plist-get options :parent-items)
 	       (hare--file-name-equal (car children) parent)
 	       (null (cdr children)))
-      (setcdr children (sort (delq nil (mapcar (lambda (relative)
-						 (unless (cl-member relative vc-directory-exclusion-list
-								    :test #'hare--file-name-equal)
-      						   (hare--expand-file-name relative parent)))
-					       (directory-files parent nil directory-files-no-dot-files-regexp t)))
-			     #'hare--file-name-lessp)))
+      (setcdr children (hare--directory-files parent)))
     ;; Apply filters.
     (let ((vc-state (plist-get options :vc-state)))
       (cond ((consp vc-state)
