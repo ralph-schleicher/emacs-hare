@@ -436,8 +436,45 @@ This type is only used as a child item of a HareSVN paths structure."
    :documentation "The top-level working copy directory file name.")
   (vc-backend nil
    :documentation "The responsible VC backend.")
-  (vc-state ()
+  (vc-state nil
    :documentation "The applicable VC state filter."))
+
+(defun hare--path-from-file (parent children &optional vc-backend vc-state)
+  "Destructively replace file names by corresponding path structures.
+
+First argument PARENT is the directory file name containing all children.
+Second argument CHILDREN is the list of child file names.
+Optional third argument VC-BACKEND is the responsible VC backend.
+Optional fourth argument VC-STATE is the applicable VC state filter.
+
+Return value is the modified list of child items."
+  ;; Replace file name by path structure.
+  (let ((start (length parent)))
+    (cl-mapl (lambda (cell)
+	       (let ((child (car cell)))
+		 (setcar cell (hare--make-path
+			       :absolute child
+			       :relative (let ((str (substring child start)))
+					   (if (zerop (length str)) "." str))))))
+	     children))
+  ;; Handle VC state.
+  (when (and vc-backend vc-state)
+    ;; Augment the paths with the VC state.
+    (dolist (path children)
+      (setf (hare--path-vc-state path)
+	    (hare--vc-state-refresh (hare--path-absolute path) vc-backend)))
+    ;; Apply VC state filter.
+    (when (consp vc-state)
+      (setq children (if (eq (car vc-state) 'not)
+			 (let ((vc-state (cdr vc-state)))
+			   (cl-delete-if (lambda (path)
+					   (memq (hare--path-vc-state path) vc-state))
+					 children))
+		       (cl-delete-if-not (lambda (path)
+					   (memq (hare--path-vc-state path) vc-state))
+					 children)))))
+  ;; Return the modified list.
+  children)
 
 (defun hare--collect-paths (&rest options)
   "Collect paths, i.e. files and directories.
