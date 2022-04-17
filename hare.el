@@ -600,59 +600,64 @@ signal an error unless keyword argument NO-CHILDREN is non-nil."
 	(when (and (hare--file-name-lessp parent path)
 		   (null children))
 	  (setq children (list path)))))
-    ;; If there are no children, operate on the parent.
-    (when (null children)
-      (setq children (list parent)))
-    (when (and (plist-get options :collect-parent)
-	       (not (hare--file-name-equal (car children) parent)))
-      (setq children (cons parent children)))
-    ;; When operating on the parent only, optionally include the
-    ;; parent's files and directories.
-    (when (and (plist-get options :parent-items)
-	       (hare--file-name-equal (car children) parent)
-	       (null (cdr children)))
-      (setcdr children (hare--directory-files parent)))
-    ;; Apply filters.
-    (let ((vc-state (plist-get options :vc-state)))
-      (cond ((consp vc-state)
-	     (let (list state)
-	       (if (not (eq (car vc-state) 'not))
-		   (dolist (child children)
-		     (setq state (hare--vc-state-refresh child backend))
-		     (when (or (memq state vc-state) (hare--file-name-equal child parent))
-		       (push (cons child state) list)))
-		 ;; Drop ‘not’.
-		 (setq vc-state (cdr vc-state))
-		 (dolist (child children)
-		   (setq state (hare--vc-state-refresh child backend))
-		   (when (or (not (memq state vc-state)) (hare--file-name-equal child parent))
-		     (push (cons child state) list))))
-	       (setq children (nreverse list))))
-	    (vc-state
-	     ;; Augment the paths with the VC state.
-	     (cl-do ((cell children #'cdr))
-		 ((consp cell))
-	       (let ((child (car cell)))
-		 (setcar cell (cons child (hare--vc-state-refresh child backend))))))))
     ;; Create the HareSVN paths structure.
-    (unless (or children (plist-get options :no-children))
-      (error "No path"))
-    (let ((start (length parent)))
-      (hare--make-paths
-       :parent parent
-       :children (mapcar (lambda (object)
-			   (let ((child (if (consp object) (car object) object))
-				 (state (if (consp object) (cdr object) t)))
-			     (hare--make-path
-			      :absolute child
-			      :relative (let ((str (substring child start)))
-					  (if (zerop (length str)) "." str))
-			      :vc-state state)))
-			 children)
-       :vc-root root
-       :vc-backend backend
-       :vc-state (let ((state (plist-get options :vc-state)))
-		   (if (consp state) (copy-sequence state) state))))))
+    (let ((paths (let ((state (plist-get options :vc-state)))
+		   (when (consp state)
+		     (setq state (copy-sequence state)))
+		   (hare--make-paths
+		    :parent parent
+		    :children (hare--path-from-file parent children backend state)
+		    :vc-root root
+		    :vc-backend backend
+		    :vc-state state))))
+      ;; If there are no children, operate on the parent.
+      (when (or (null (hare--paths-children paths))
+		(and (plist-get options :collect-parent)
+		     (not (hare--file-name-equal
+			   (hare--path-absolute (car (hare--paths-children paths)))
+			   parent))))
+	(setf (hare--paths-children paths)
+	      (nconc (hare--path-from-file
+		      (hare--paths-parent paths)
+		      (list (hare--paths-parent paths))
+		      (hare--paths-vc-backend paths)
+		      (not (null (hare--paths-vc-state paths))))
+		     (hare--paths-children paths))))
+      ;; When operating on the parent only, optionally include the
+      ;; parent's files and directories.
+      (when (and (plist-get options :parent-items)
+		 (hare--file-name-equal
+		  (hare--path-absolute (car (hare--paths-children paths)))
+		  parent)
+		 (null (cdr (hare--paths-children paths))))
+	(hare--paths-insert-subdir paths (car (hare--paths-children paths))))
+      ;; Final check.
+      (unless (or (hare--paths-children paths) (plist-get options :no-children))
+	(error "No path"))
+      paths)))
+
+(defun hare--paths-insert-subdir (paths subdir &optional _recursively)
+  "Insert the files and directories of a subdirectory.
+
+First argument PATHS is a HareSVN paths structure.
+Second argument SUBDIR is a path structure.  Signal an error if SUBDIR is
+ not an existing child of PATHS.  Do nothing if SUBDIR is not a directory.
+Optional third argument RECURSIVELY has no effect.
+
+Return value is the HareSVN paths structure."
+  (let ((here (memq subdir (hare--paths-children paths))))
+    (when (null here)
+      (error "Not a child"))
+    (when (hare--path-directory-p subdir)
+      (let ((items (hare--path-from-file
+		    (hare--paths-parent paths)
+		    (hare--directory-files (hare--path-absolute subdir))
+		    (hare--paths-vc-backend paths)
+		    (hare--paths-vc-state paths))))
+	;; Insert ITEMS after HERE into the list of children.
+	(let ((tail (cdr here)))
+	  (setcdr here (nconc items tail))))))
+  paths)
 
 ;;;; Log Messages
 
