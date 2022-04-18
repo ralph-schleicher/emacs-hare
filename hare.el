@@ -426,7 +426,7 @@ This type is only used as a child item of a HareSVN paths structure."
 (cl-defstruct (hare--paths
 	       (:constructor nil)
 	       (:constructor hare--make-paths)
-	       (:copier nil))
+	       (:copier hare--copy-paths))
   "A collection of paths, i.e. file names."
   (parent nil
    :documentation "The directory file name containing all children.")
@@ -930,78 +930,106 @@ The BODY is evaluated in an environment where the values
 	  (insert relative)
 	  (put-text-property mark (point) 'help-echo absolute))))))
 
-(defun hare--form-paths (paths checked)
-  "Insert a list of file names into the form.
+(define-widget 'hare--form-paths 'default
+  "A widget for selecting multiple file names.
 The user can select/deselect items interactively.
 
-First argument PATHS is a HareSVN paths structure.
-Second argument CHECKED determines the initial state
- of the check list items.
+Value is a HareSVN paths structure."
+  :format "%v"
+  :value-create 'hare--form-paths-value-create
+  :value-get 'hare--form-paths-value-get
+  ;; Embedded widgets.
+  :hare-operation nil
+  :hare-checklist nil)
 
-Return value is a ‘checklist’ widget."
-  ;; This is a closure for the notification call-backs.
-  (let (checklist operation)
-    (unless (bolp)
-      (insert ?\n))
+(defun hare--form-paths-value-create (widget)
+  "Insert the printed representation of the value."
+  (let ((paths (widget-get widget :value)))
+    (unless (hare--paths-p paths)
+      (error "Invalid value"))
     (insert "Check: ")
     (widget-create 'push-button
-                   :notify (lambda (&rest _ignore)
-                             (dolist (button (widget-get checklist :buttons))
-                               (unless (widget-value button)
-                                 (widget-checkbox-action button))))
-                   " All ")
+                   :notify (lambda (widget &rest _ignore)
+			     (let ((checklist (widget-get
+					       (widget-get widget :hare-paths)
+					       :hare-checklist)))
+                               (dolist (button (widget-get checklist :buttons))
+				 (unless (widget-value button)
+                                   (widget-checkbox-action button)))))
+		   :hare-paths widget
+		   " All ")
     (insert ?\s)
     (widget-create 'push-button
-                   :notify (lambda (&rest _ignore)
-                             (dolist (button (widget-get checklist :buttons))
-                               (when (widget-value button)
-                                 (widget-checkbox-action button))))
+                   :notify (lambda (widget &rest _ignore)
+			     (let ((checklist (widget-get
+					       (widget-get widget :hare-paths)
+					       :hare-checklist)))
+                               (dolist (button (widget-get checklist :buttons))
+				 (when (widget-value button)
+                                   (widget-checkbox-action button)))))
+		   :hare-paths widget
                    " None ")
     ;; A menu to define the set operation for the following buttons.
     (insert ?\s ?\s)
-    (setq operation (apply #'widget-create 'menu-choice
-			   :value (if checked 'and 'or)
-			   :format "%[ %v %]"
-			   :menu-tag "Set Operation"
-			   '((const
-			      :value or
-			      :format "%t"
-			      :tag "OR"
-			      :menu-tag "Union/OR")
-			     (const
-			      :value and
-			      :format "%t"
-			      :tag "AND"
-			      :menu-tag "Intersection/AND")
-			     (const
-			      :value and-not
-			      :format "%t"
-			      :tag "AND NOT"
-			      :menu-tag "Difference/AND NOT")
-			     (const
-			      :value xor
-			      :format "%t"
-			      :tag "XOR"
-			      :menu-tag "Symmetric Difference/XOR"))))
+    (let* ((checked (widget-get widget :hare-checked))
+	   (operation (apply #'widget-create 'menu-choice
+			     :value (if checked 'and 'or)
+			     :format "%[ %v %]"
+			     :menu-tag "Set Operation"
+			     '((const
+				:value or
+				:format "%t"
+				:tag "OR"
+				:menu-tag "Union/OR")
+			       (const
+				:value and
+				:format "%t"
+				:tag "AND"
+				:menu-tag "Intersection/AND")
+			       (const
+				:value and-not
+				:format "%t"
+				:tag "AND NOT"
+				:menu-tag "Difference/AND NOT")
+			       (const
+				:value xor
+				:format "%t"
+				:tag "XOR"
+				:menu-tag "Symmetric Difference/XOR")))))
+      (widget-put widget :hare-operation operation))
     (insert ?\s ?\s)
     (widget-create 'push-button
-                   :notify (lambda (&rest _ignore)
-			     (let ((op (widget-get operation :value)))
-                               (dolist (child (widget-get checklist :children))
-				 (hare--form-paths-apply-operation op
-				   (not (hare--path-directory-p
-					 (widget-get child :value)))
-				   (widget-get child :button)))))
+                   :notify (lambda (widget &rest _ignore)
+			     (let ((operation (widget-get
+					       (widget-get widget :hare-paths)
+					       :hare-operation))
+				   (checklist (widget-get
+					       (widget-get widget :hare-paths)
+					       :hare-checklist)))
+			       (let ((op (widget-get operation :value)))
+				 (dolist (child (widget-get checklist :children))
+				   (hare--form-paths-apply-operation op
+				     (not (hare--path-directory-p
+					   (widget-get child :value)))
+				     (widget-get child :button))))))
+		   :hare-paths widget
                    " Files ")
     (insert ?\s)
     (widget-create 'push-button
-                   :notify (lambda (&rest _ignore)
-			     (let ((op (widget-get operation :value)))
-                               (dolist (child (widget-get checklist :children))
-				 (hare--form-paths-apply-operation op
-				   (hare--path-directory-p
-				    (widget-get child :value))
-				   (widget-get child :button)))))
+                   :notify (lambda (widget &rest _ignore)
+			     (let ((operation (widget-get
+					       (widget-get widget :hare-paths)
+					       :hare-operation))
+				   (checklist (widget-get
+					       (widget-get widget :hare-paths)
+					       :hare-checklist)))
+			       (let ((op (widget-get operation :value)))
+				 (dolist (child (widget-get checklist :children))
+				   (hare--form-paths-apply-operation op
+				     (hare--path-directory-p
+				      (widget-get child :value))
+				     (widget-get child :button))))))
+		   :hare-paths widget
                    " Folders ")
     (when (hare--paths-vc-state paths)
       (insert ?\s)
@@ -1009,13 +1037,20 @@ Return value is a ‘checklist’ widget."
 	     :format "%[ %t %]"
 	     :tag "VC State"
 	     :notify (lambda (widget &rest _ignore)
-		       (let ((state (widget-get widget :value))
-			     (op (widget-get operation :value)))
-                         (dolist (child (widget-get checklist :children))
-			   (hare--form-paths-apply-operation op
-			     (eq state (hare--path-vc-state
-					(widget-get child :value)))
-			     (widget-get child :button)))))
+		       (let ((operation (widget-get
+					 (widget-get widget :hare-paths)
+					 :hare-operation))
+			     (checklist (widget-get
+					 (widget-get widget :hare-paths)
+					 :hare-checklist)))
+			 (let ((state (widget-get widget :value))
+			       (op (widget-get operation :value)))
+			   (dolist (child (widget-get checklist :children))
+			     (hare--form-paths-apply-operation op
+			       (eq state (hare--path-vc-state
+					  (widget-get child :value)))
+			       (widget-get child :button))))))
+	     :hare-paths widget
 	     (mapcar (lambda (state)
 		       `(const
 			 :value ,state
@@ -1023,30 +1058,18 @@ Return value is a ‘checklist’ widget."
 			 :tag ,(plist-get (cdr (assq state hare--vc-state-alist)) :help)))
 		     hare--vc-states)))
     (insert ?\n ?\n)
+    ;; The file name listing.
     (insert (directory-file-name (abbreviate-file-name (hare--paths-parent paths))) ?: ?\n)
-    (setq checklist (apply #'widget-create 'checklist
-			   :entry-format " %b %v"
-			   :value-get 'hare--form-paths-value-get
-			   :hare-paths paths
-			   (mapcar (lambda (path)
-				     `(hare--form-path :value ,path))
-				   (hare--paths-children paths))))
-    (let ((flag (not (null checked))))
-      (dolist (button (widget-get checklist :buttons))
-        (unless (eq (widget-value button) flag)
-          (widget-checkbox-action button))))
-    checklist))
-
-(defun hare--form-paths-value-get (checklist)
-  "Return the HareSVN paths structure with all selected children."
-  (let ((paths (widget-get checklist :hare-paths)))
-    (setf (hare--paths-children paths)
-	  (let (list)
-	    (dolist (child (widget-get checklist :children))
-	      (when (widget-value (widget-get child :button))
-		(push (widget-get child :value) list)))
-	    (nreverse list)))
-    paths))
+    (let ((checklist (apply #'widget-create 'checklist
+			    :entry-format " %b %v"
+			    (mapcar (lambda (path)
+				      `(hare--form-path :value ,path))
+				    (hare--paths-children paths)))))
+      (let ((flag (widget-get widget :hare-checked)))
+	(dolist (button (widget-get checklist :buttons))
+          (unless (eq (widget-value button) flag)
+            (widget-checkbox-action button))))
+      (widget-put widget :hare-checklist checklist))))
 
 (defun hare--form-paths-apply-operation (operation condition button)
   "Apply a set operation."
@@ -1078,6 +1101,17 @@ Return value is a ‘checklist’ widget."
        (widget-checkbox-action button))))
   ())
 
+(defun hare--form-paths-value-get (widget)
+  "Return a HareSVN paths structure with all selected children."
+  (let ((paths (hare--copy-paths (widget-get widget :value))))
+    (setf (hare--paths-children paths)
+	  (let (list)
+	    (dolist (child (widget-get (widget-get widget :hare-checklist) :children))
+	      (when (widget-value (widget-get child :button))
+		(push (widget-get child :value) list)))
+	    (nreverse list)))
+    paths))
+
 (defun hare--form-fileset-from-paths (object &rest options)
   "Create a VC fileset from a paths object.
 
@@ -1092,8 +1126,8 @@ Return nil if no fileset can be determined."
 			((hare--paths-p object)
 			 'hare--paths)))
 	    (paths (cl-case type
-		     (checklist
-		      (widget-get object :hare-paths))
+		     (hare--form-paths
+		      (widget-get object :value))
 		     (hare--paths
 		      object)))
 	    (backend (or (hare--paths-vc-backend paths)
@@ -1102,9 +1136,9 @@ Return nil if no fileset can be determined."
 			 (vc-responsible-backend
 			  (hare--paths-parent paths) t))))
       (let ((files (cl-case type
-		     (checklist
+		     (hare--form-paths
 		      (let (list)
-			(dolist (child (widget-get object :children))
+			(dolist (child (widget-get (widget-get object :hare-checklist) :children))
 			  (when (widget-value (widget-get child :button))
 			    (push (hare--path-absolute (widget-value child)) list)))
 			(nreverse list)))
@@ -1118,7 +1152,23 @@ Return nil if no fileset can be determined."
       (ignore (message "Can not determine any file")))))
 
 (defvar-local hare--form-paths-widget nil
-  "The checklist widget for selecting file names.")
+  "The paths widget for selecting file names.")
+
+(defun hare--form-paths (paths checked)
+  "Insert a list of file names into the form.
+The user can select/deselect items interactively.
+
+First argument PATHS is a HareSVN paths structure.
+Second argument CHECKED determines the initial state
+ of the check list items.
+
+Return value is a ‘hare--form-paths’ widget."
+  (unless (bolp)
+    (insert ?\n))
+  (setq hare--form-paths-widget
+	(widget-create 'hare--form-paths
+		       :hare-checked (not (null checked))
+		       :value paths)))
 
 (defvar-local hare--form-log-edit-widget nil
   "The text widget for editing the log message.")
