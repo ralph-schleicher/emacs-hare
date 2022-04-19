@@ -2052,7 +2052,7 @@ too."))
   "Put files and directories under version control."
   (interactive "P")
   (let ((paths (hare--svn-collect-paths
-		:vc-state '(unregistered)
+		:vc-state '(unregistered nil)
 		:parent-items t)))
     (hare--form (targets depth force no-ignore auto-props parents)
 	"Put files and directories under version control."
