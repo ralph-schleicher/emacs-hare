@@ -432,6 +432,8 @@ This type is only used as a child item of a HareSVN paths structure."
    :documentation "The directory file name containing all children.")
   (children ()
    :documentation "The list of child items.")
+  (insertions ()
+   :documentation "The list of inserted directories.")
   (vc-root nil
    :documentation "The top-level working copy directory file name.")
   (vc-backend nil
@@ -644,20 +646,54 @@ Second argument SUBDIR is a path structure.  Signal an error if SUBDIR is
  not an existing child of PATHS.  Do nothing if SUBDIR is not a directory.
 Optional third argument RECURSIVELY has no effect.
 
-Return value is the HareSVN paths structure."
+Return value is non-nil if the HareSVN paths structure has been modified."
+  (let ((here (memq subdir (hare--paths-children paths))))
+    (when (null here)
+      (error "Not a child"))
+    (when-let ((items (when (and (hare--path-directory-p subdir)
+				 (not (cl-member (hare--path-absolute subdir)
+						 (hare--paths-insertions paths)
+						 :test #'hare--file-name-equal)))
+			(hare--path-from-file
+			 (hare--paths-parent paths)
+			 (hare--directory-files (hare--path-absolute subdir))
+			 (hare--paths-vc-backend paths)
+			 (hare--paths-vc-state paths)))))
+      ;; Insert ITEMS after HERE into the list of children.
+      (let ((tail (cdr here)))
+	(setcdr here (nconc items tail)))
+      ;; Mark subdirectory as inserted.
+      (push (hare--path-absolute subdir) (hare--paths-insertions paths))
+      t)))
+
+(defun hare--paths-remove-subdir (paths subdir)
+  "Remove the files and directories of a subdirectory.
+
+First argument PATHS is a HareSVN paths structure.
+Second argument SUBDIR is a path structure.  Signal an error if SUBDIR is
+ not an existing child of PATHS.  Do nothing if SUBDIR is not a directory.
+
+Return value is non-nil if the HareSVN paths structure has been modified."
   (let ((here (memq subdir (hare--paths-children paths))))
     (when (null here)
       (error "Not a child"))
     (when (hare--path-directory-p subdir)
-      (let ((items (hare--path-from-file
-		    (hare--paths-parent paths)
-		    (hare--directory-files (hare--path-absolute subdir))
-		    (hare--paths-vc-backend paths)
-		    (hare--paths-vc-state paths))))
-	;; Insert ITEMS after HERE into the list of children.
-	(let ((tail (cdr here)))
-	  (setcdr here (nconc items tail))))))
-  paths)
+      (let (modified)
+	(setf (hare--paths-children paths)
+	      (cl-delete-if (lambda (child)
+			      (when (and (not (eq subdir child))
+					 (string-prefix-p
+					  (hare--path-absolute subdir)
+					  (hare--path-absolute child)
+					  hare--file-name-ignore-case))
+				(setq modified t)))
+			    (hare--paths-children paths)))
+	;; Clear insertion mark.
+	(setf (hare--paths-insertions paths)
+	      (cl-delete (hare--path-absolute subdir)
+			 (hare--paths-insertions paths)
+			 :test #'hare--file-name-equal))
+	modified))))
 
 ;;;; Log Messages
 
@@ -911,9 +947,22 @@ The BODY is evaluated in an environment where the values
                   ,@(when label (list label))))
 
 (define-widget 'hare--form-path 'const
-  "A file name with optional VC state."
-  :format "%v\n"
+  "A file name with optional VC state.
+Value is a ‘hare--path’ structure."
+  :format "%v"
   :value-create 'hare--form-path-value-create)
+
+(defvar hare--form-path-directory-keymap
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map widget-keymap)
+    (define-key map "\r" 'hare--form-paths-insert-subdir) ;RET
+    (define-key map "\d" 'hare--form-paths-remove-subdir) ;DEL
+    (define-key map [mouse-2] 'hare--form-paths-insert-subdir-event)
+    (define-key map [mouse-3] 'hare--form-paths-remove-subdir-event)
+    (define-key map [down-mouse-2] 'ignore)
+    (define-key map [down-mouse-3] 'ignore)
+    map)
+  "Keymap for a directory path.")
 
 (defun hare--form-path-value-create (widget)
   "Insert the printed representation of the value."
@@ -923,12 +972,32 @@ The BODY is evaluated in an environment where the values
 	(hare--insert-icon state)
 	(insert ?\s)))
     (let ((absolute (hare--path-absolute path))
-	  (relative (hare--path-relative path)))
+	  (relative (hare--path-relative path))
+	  (mark (point)))
       (if (null relative)
 	  (insert absolute)
 	(let ((mark (point)))
 	  (insert relative)
-	  (put-text-property mark (point) 'help-echo absolute))))))
+	  (put-text-property mark (point) 'help-echo absolute)))
+      (put-text-property mark (point) 'hare-path widget)
+      (when (hare--path-directory-p path)
+	(let ((help (concat (when-let ((help (get-text-property mark 'help-echo)))
+			      (concat help "\n\n"))
+			    "mouse-2: Insert directory contents" "\n"
+			    "mouse-3: Remove directory contents")))
+	  (put-text-property mark (point) 'help-echo help))
+	(put-text-property mark (point) 'keymap hare--form-path-directory-keymap)))))
+
+(defun hare--form-path-at-point ()
+  "Return the path widget at point."
+  (save-excursion
+    (forward-line 0)
+    (when-let* ((limit (line-end-position))
+		(start (next-single-property-change
+			(point) 'hare-path nil limit))
+		(end (next-single-property-change
+		      start 'hare-path nil limit)))
+      (get-text-property start 'hare-path))))
 
 (define-widget 'hare--form-paths 'default
   "A widget for selecting multiple file names.
@@ -1061,7 +1130,8 @@ Value is a HareSVN paths structure."
     ;; The file name listing.
     (insert (directory-file-name (abbreviate-file-name (hare--paths-parent paths))) ?: ?\n)
     (let ((checklist (apply #'widget-create 'checklist
-			    :entry-format " %b %v"
+			    :entry-format " %b %v\n"
+			    :hare-paths widget
 			    (mapcar (lambda (path)
 				      `(hare--form-path :value ,path))
 				    (hare--paths-children paths)))))
@@ -1072,31 +1142,36 @@ Value is a HareSVN paths structure."
       (widget-put widget :hare-checklist checklist))))
 
 (defun hare--form-paths-apply-operation (operation condition button)
-  "Apply a set operation."
+  "Apply a set operation.
+
+The order of the operands is reversed.  The button value is the
+left hand side operand and the condition value is the right hand
+side operand.  However, this is only relevant for the AND NOT
+operation."
   (declare (indent 1))
   (cl-ecase operation
     (or
-     ;; Condition: T T F F
-     ;;    Button: T F T F
+     ;;    Button: T T F F
      ;;        OR: T T T F
+     ;; Condition: T F T F
      (when (and condition (not (widget-value button)))
        (widget-checkbox-action button)))
     (and
-     ;; Condition: T T F F
-     ;;    Button: T F T F
+     ;;    Button: T T F F
      ;;       AND: T F F F
+     ;; Condition: T F T F
      (when (and (not condition) (widget-value button))
        (widget-checkbox-action button)))
     (and-not
-     ;; Condition: T T F F
-     ;;    Button: T F T F
+     ;;    Button: T T F F
      ;;   AND NOT: F T F F
-     (when (or condition (widget-value button))
+     ;; Condition: T F T F
+     (when (and condition (widget-value button))
        (widget-checkbox-action button)))
     (xor
-     ;; Condition: T T F F
-     ;;    Button: T F T F
+     ;;    Button: T T F F
      ;;       XOR: F T T F
+     ;; Condition: T F T F
      (when condition
        (widget-checkbox-action button))))
   ())
@@ -1111,6 +1186,70 @@ Value is a HareSVN paths structure."
 		(push (widget-get child :value) list)))
 	    (nreverse list)))
     paths))
+
+(defun hare--form-paths-insert-subdir ()
+  "Insert the files and directories of the subdirectory at point.
+See ‘hare--form-path-directory-keymap’."
+  (interactive)
+  (hare--form-paths-apply-subdir-function #'hare--paths-insert-subdir))
+
+(defun hare--form-paths-insert-subdir-event (event)
+  "Insert the files and directories of the indicated subdirectory.
+See ‘hare--form-path-directory-keymap’"
+  (interactive "e")
+  (save-excursion
+    (goto-char (posn-point (event-start event)))
+    (hare--form-paths-insert-subdir)))
+
+(defun hare--form-paths-remove-subdir ()
+  "Remove the files and directories of the subdirectory at point.
+See ‘hare--form-path-directory-keymap’"
+  (interactive)
+  (hare--form-paths-apply-subdir-function #'hare--paths-remove-subdir))
+
+(defun hare--form-paths-remove-subdir-event (event)
+  "Remove the files and directories of the indicated subdirectory.
+See ‘hare--form-path-directory-keymap’"
+  (interactive "e")
+  (save-excursion
+    (goto-char (posn-point (event-start event)))
+    (hare--form-paths-remove-subdir)))
+
+(defun hare--form-paths-apply-subdir-function (fun)
+  "Insert or remove the files and directories of the subdirectory at point."
+  (when-let* ((path-widget (hare--form-path-at-point))
+	      (path (widget-get path-widget :value))
+	      (checklist (widget-get path-widget :parent))
+	      (paths-widget (widget-get checklist :hare-paths))
+	      (paths (widget-get paths-widget :value)))
+    (when (funcall fun paths path)
+      (let (;; Backup button values.
+	    (checked (mapcar (lambda (child)
+			       (let ((path (widget-get child :value)))
+				 (cons (hare--path-absolute path)
+				       (widget-value (widget-get child :button)))))
+			     (widget-get checklist :children))))
+	;; Replace the ‘checklist’ widget.
+	(widget-apply checklist :delete)
+	;; TODO: Is it possible to modify the ‘checklist’ widget
+	;; in place instead of creating a new one?  Otherwise,
+	;; sync the code with ‘hare--form-paths-value-create’.
+	(setq checklist (apply #'widget-create 'checklist
+			       :entry-format " %b %v\n"
+			       :hare-paths paths-widget
+			       (mapcar (lambda (path)
+					 `(hare--form-path :value ,path))
+				       (hare--paths-children paths))))
+	;; Restore button values.
+	(dolist (child (widget-get checklist :children))
+	  (let* ((button (widget-get child :button))
+		 (path (widget-get child :value))
+		 (cell (cl-assoc (hare--path-absolute path) checked
+				 :test #'hare--file-name-equal)))
+	    (when (and cell (not (eq (widget-value button) (cdr cell))))
+	      (widget-checkbox-action button))))
+	;; Update the paths widget.
+	(widget-put paths-widget :hare-checklist checklist)))))
 
 (defun hare--form-fileset-from-paths (object &rest options)
   "Create a VC fileset from a paths object.
