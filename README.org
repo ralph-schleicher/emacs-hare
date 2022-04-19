@@ -52,9 +52,10 @@ succeeds.  Of course, this feature can be customized.
 
 ** To Do
 - [X] Add context menu to run version control commands.
+- [ ] Conditionally show/hide context menu entries.
+- [ ] Complete the context menu.
 - [ ] Get rid of all compiler warnings; see ‘make check’.
 - [ ] Merge Subversion targets into --targets command line option.
-- [ ] Conditionally show/hide context menu entries.
 - [X] Expand subdirectories in paths widget.
 
 ** See Also
