@@ -16,7 +16,7 @@ The HareSVN context menu shall provide the following commands.
 
 - [X] commit
 - [X] update
-- [ ] resolve
+- [X] resolve
 - [X] --
 - [X] add
 - [ ] import
@@ -55,7 +55,7 @@ succeeds.  Of course, this feature can be customized.
 - [ ] Get rid of all compiler warnings; see ‘make check’.
 - [ ] Merge Subversion targets into --targets command line option.
 - [ ] Conditionally show/hide context menu entries.
-- [ ] Expand subdirectories in paths widget.
+- [X] Expand subdirectories in paths widget.
 
 ** See Also
 - https://github.com/dgutov/diff-hl :: diff-hl-dired-mode
