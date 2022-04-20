@@ -946,25 +946,25 @@ The BODY is evaluated in an environment where the values
 			          (apply call-back arguments))))
                   ,@(when label (list label))))
 
-(define-widget 'hare--form-path 'const
+(define-widget 'hare--path-widget 'const
   "A file name with optional VC state.
 Value is a ‘hare--path’ structure."
   :format "%v"
-  :value-create 'hare--form-path-value-create)
+  :value-create 'hare--path-widget-value-create)
 
-(defvar hare--form-path-directory-keymap
+(defvar hare--path-widget-directory-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map widget-keymap)
-    (define-key map "\r" 'hare--form-paths-insert-subdir) ;RET
-    (define-key map "\d" 'hare--form-paths-remove-subdir) ;DEL
-    (define-key map [mouse-2] 'hare--form-paths-insert-subdir-event)
-    (define-key map [mouse-3] 'hare--form-paths-remove-subdir-event)
+    (define-key map "\r" 'hare--paths-widget-insert-subdir) ;RET
+    (define-key map "\d" 'hare--paths-widget-remove-subdir) ;DEL
+    (define-key map [mouse-2] 'hare--paths-widget-insert-subdir-event)
+    (define-key map [mouse-3] 'hare--paths-widget-remove-subdir-event)
     (define-key map [down-mouse-2] 'ignore)
     (define-key map [down-mouse-3] 'ignore)
     map)
   "Keymap for a directory path.")
 
-(defun hare--form-path-value-create (widget)
+(defun hare--path-widget-value-create (widget)
   "Insert the printed representation of the value."
   (let ((path (widget-get widget :value)))
     (let ((state (hare--path-vc-state path)))
@@ -986,9 +986,9 @@ Value is a ‘hare--path’ structure."
 			    "mouse-2: Insert directory contents" "\n"
 			    "mouse-3: Remove directory contents")))
 	  (put-text-property mark (point) 'help-echo help))
-	(put-text-property mark (point) 'keymap hare--form-path-directory-keymap)))))
+	(put-text-property mark (point) 'keymap hare--path-widget-directory-keymap)))))
 
-(defun hare--form-path-at-point ()
+(defun hare--path-widget-at-point ()
   "Return the path widget at point."
   (save-excursion
     (forward-line 0)
@@ -999,19 +999,19 @@ Value is a ‘hare--path’ structure."
 		      start 'hare-path nil limit)))
       (get-text-property start 'hare-path))))
 
-(define-widget 'hare--form-paths 'default
+(define-widget 'hare--paths-widget 'default
   "A widget for selecting multiple file names.
 The user can select/deselect items interactively.
 
 Value is a HareSVN paths structure."
   :format "%v"
-  :value-create 'hare--form-paths-value-create
-  :value-get 'hare--form-paths-value-get
+  :value-create 'hare--paths-widget-value-create
+  :value-get 'hare--paths-widget-value-get
   ;; Embedded widgets.
   :hare-operation nil
   :hare-checklist nil)
 
-(defun hare--form-paths-value-create (widget)
+(defun hare--paths-widget-value-create (widget)
   "Insert the printed representation of the value."
   (let ((paths (widget-get widget :value)))
     (unless (hare--paths-p paths)
@@ -1077,7 +1077,7 @@ Value is a HareSVN paths structure."
 					       :hare-checklist)))
 			       (let ((op (widget-get operation :value)))
 				 (dolist (child (widget-get checklist :children))
-				   (hare--form-paths-apply-operation op
+				   (hare--paths-widget-apply-set-operation op
 				     (not (hare--path-directory-p
 					   (widget-get child :value)))
 				     (widget-get child :button))))))
@@ -1094,7 +1094,7 @@ Value is a HareSVN paths structure."
 					       :hare-checklist)))
 			       (let ((op (widget-get operation :value)))
 				 (dolist (child (widget-get checklist :children))
-				   (hare--form-paths-apply-operation op
+				   (hare--paths-widget-apply-set-operation op
 				     (hare--path-directory-p
 				      (widget-get child :value))
 				     (widget-get child :button))))))
@@ -1115,7 +1115,7 @@ Value is a HareSVN paths structure."
 			 (let ((state (widget-get widget :value))
 			       (op (widget-get operation :value)))
 			   (dolist (child (widget-get checklist :children))
-			     (hare--form-paths-apply-operation op
+			     (hare--paths-widget-apply-set-operation op
 			       (eq state (hare--path-vc-state
 					  (widget-get child :value)))
 			       (widget-get child :button))))))
@@ -1133,7 +1133,7 @@ Value is a HareSVN paths structure."
 			    :entry-format " %b %v\n"
 			    :hare-paths widget
 			    (mapcar (lambda (path)
-				      `(hare--form-path :value ,path))
+				      `(hare--path-widget :value ,path))
 				    (hare--paths-children paths)))))
       (let ((flag (widget-get widget :hare-checked)))
 	(dolist (button (widget-get checklist :buttons))
@@ -1141,7 +1141,7 @@ Value is a HareSVN paths structure."
             (widget-checkbox-action button))))
       (widget-put widget :hare-checklist checklist))))
 
-(defun hare--form-paths-apply-operation (operation condition button)
+(defun hare--paths-widget-apply-set-operation (operation condition button)
   "Apply a set operation.
 
 The order of the operands is reversed.  The button value is the
@@ -1176,7 +1176,7 @@ operation."
        (widget-checkbox-action button))))
   ())
 
-(defun hare--form-paths-value-get (widget)
+(defun hare--paths-widget-value-get (widget)
   "Return a HareSVN paths structure with all selected children."
   (let ((paths (hare--copy-paths (widget-get widget :value))))
     (setf (hare--paths-children paths)
@@ -1187,37 +1187,37 @@ operation."
 	    (nreverse list)))
     paths))
 
-(defun hare--form-paths-insert-subdir ()
+(defun hare--paths-widget-insert-subdir ()
   "Insert the files and directories of the subdirectory at point.
-See ‘hare--form-path-directory-keymap’."
+See ‘hare--path-widget-directory-keymap’."
   (interactive)
-  (hare--form-paths-apply-subdir-function #'hare--paths-insert-subdir))
+  (hare--paths-widget-apply-subdir-function #'hare--paths-insert-subdir))
 
-(defun hare--form-paths-insert-subdir-event (event)
+(defun hare--paths-widget-insert-subdir-event (event)
   "Insert the files and directories of the indicated subdirectory.
-See ‘hare--form-path-directory-keymap’"
+See ‘hare--path-widget-directory-keymap’"
   (interactive "e")
   (save-excursion
     (goto-char (posn-point (event-start event)))
-    (hare--form-paths-insert-subdir)))
+    (hare--paths-widget-insert-subdir)))
 
-(defun hare--form-paths-remove-subdir ()
+(defun hare--paths-widget-remove-subdir ()
   "Remove the files and directories of the subdirectory at point.
-See ‘hare--form-path-directory-keymap’"
+See ‘hare--path-widget-directory-keymap’"
   (interactive)
-  (hare--form-paths-apply-subdir-function #'hare--paths-remove-subdir))
+  (hare--paths-widget-apply-subdir-function #'hare--paths-remove-subdir))
 
-(defun hare--form-paths-remove-subdir-event (event)
+(defun hare--paths-widget-remove-subdir-event (event)
   "Remove the files and directories of the indicated subdirectory.
-See ‘hare--form-path-directory-keymap’"
+See ‘hare--path-widget-directory-keymap’"
   (interactive "e")
   (save-excursion
     (goto-char (posn-point (event-start event)))
-    (hare--form-paths-remove-subdir)))
+    (hare--paths-widget-remove-subdir)))
 
-(defun hare--form-paths-apply-subdir-function (fun)
+(defun hare--paths-widget-apply-subdir-function (fun)
   "Insert or remove the files and directories of the subdirectory at point."
-  (when-let* ((path-widget (hare--form-path-at-point))
+  (when-let* ((path-widget (hare--path-widget-at-point))
 	      (path (widget-get path-widget :value))
 	      (checklist (widget-get path-widget :parent))
 	      (paths-widget (widget-get checklist :hare-paths))
@@ -1233,12 +1233,12 @@ See ‘hare--form-path-directory-keymap’"
 	(widget-apply checklist :delete)
 	;; TODO: Is it possible to modify the ‘checklist’ widget
 	;; in place instead of creating a new one?  Otherwise,
-	;; sync the code with ‘hare--form-paths-value-create’.
+	;; sync the code with ‘hare--paths-widget-value-create’.
 	(setq checklist (apply #'widget-create 'checklist
 			       :entry-format " %b %v\n"
 			       :hare-paths paths-widget
 			       (mapcar (lambda (path)
-					 `(hare--form-path :value ,path))
+					 `(hare--path-widget :value ,path))
 				       (hare--paths-children paths))))
 	;; Restore button values.
 	(dolist (child (widget-get checklist :children))
@@ -1265,7 +1265,7 @@ Return nil if no fileset can be determined."
 			((hare--paths-p object)
 			 'hare--paths)))
 	    (paths (cl-case type
-		     (hare--form-paths
+		     (hare--paths-widget
 		      (widget-get object :value))
 		     (hare--paths
 		      object)))
@@ -1275,7 +1275,7 @@ Return nil if no fileset can be determined."
 			 (vc-responsible-backend
 			  (hare--paths-parent paths) t))))
       (let ((files (cl-case type
-		     (hare--form-paths
+		     (hare--paths-widget
 		      (let (list)
 			(dolist (child (widget-get (widget-get object :hare-checklist) :children))
 			  (when (widget-value (widget-get child :button))
@@ -1301,11 +1301,11 @@ First argument PATHS is a HareSVN paths structure.
 Second argument CHECKED determines the initial state
  of the check list items.
 
-Return value is a ‘hare--form-paths’ widget."
+Return value is a ‘hare--paths-widget’ widget."
   (unless (bolp)
     (insert ?\n))
   (setq hare--form-paths-widget
-	(widget-create 'hare--form-paths
+	(widget-create 'hare--paths-widget
 		       :hare-checked (not (null checked))
 		       :value paths)))
 
