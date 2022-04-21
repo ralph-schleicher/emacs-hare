@@ -690,9 +690,11 @@ Return value is non-nil if the HareSVN paths structure has been modified."
 			    (hare--paths-children paths)))
 	;; Clear insertion mark.
 	(setf (hare--paths-insertions paths)
-	      (cl-delete (hare--path-absolute subdir)
-			 (hare--paths-insertions paths)
-			 :test #'hare--file-name-equal))
+	      (cl-delete-if (lambda (dir)
+			      (string-prefix-p
+			       (hare--path-absolute subdir) dir
+			       hare--file-name-ignore-case))
+			    (hare--paths-insertions paths)))
 	modified))))
 
 ;;;; Log Messages
@@ -1022,7 +1024,7 @@ Value is a HareSVN paths structure."
     (setq hare--paths-widget widget)
     (insert "Check: ")
     (widget-create 'push-button
-                   :notify (lambda (widget &rest _ignore)
+                   :notify (lambda (&rest _ignore)
 			     (let ((checklist (widget-get hare--paths-widget :hare-checklist)))
                                (dolist (button (widget-get checklist :buttons))
 				 (unless (widget-value button)
@@ -1030,7 +1032,7 @@ Value is a HareSVN paths structure."
 		   " All ")
     (insert ?\s)
     (widget-create 'push-button
-                   :notify (lambda (widget &rest _ignore)
+                   :notify (lambda (&rest _ignore)
 			     (let ((checklist (widget-get hare--paths-widget :hare-checklist)))
                                (dolist (button (widget-get checklist :buttons))
 				 (when (widget-value button)
@@ -1066,7 +1068,7 @@ Value is a HareSVN paths structure."
       (widget-put widget :hare-set-operation operation))
     (insert ?\s ?\s)
     (widget-create 'push-button
-                   :notify (lambda (widget &rest _ignore)
+                   :notify (lambda (&rest _ignore)
 			     (let ((operation (widget-get hare--paths-widget :hare-set-operation))
 				   (checklist (widget-get hare--paths-widget :hare-checklist)))
 			       (let ((op (widget-get operation :value)))
@@ -1078,7 +1080,7 @@ Value is a HareSVN paths structure."
                    " Files ")
     (insert ?\s)
     (widget-create 'push-button
-                   :notify (lambda (widget &rest _ignore)
+                   :notify (lambda (&rest _ignore)
 			     (let ((operation (widget-get hare--paths-widget :hare-set-operation))
 				   (checklist (widget-get hare--paths-widget :hare-checklist)))
 			       (let ((op (widget-get operation :value)))
