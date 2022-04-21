@@ -1385,49 +1385,76 @@ Return value is a ‘hare--paths-widget’ widget."
        (hare--form-log-edit-show-files))
       ())))
 
+(define-widget 'hare--log-edit-widget 'default
+  "A widget for editing a log message."
+  :format "%v"
+  :value-create 'hare--log-edit-widget-value-create
+  :value-set 'hare--log-edit-widget-value-set
+  :value-get 'hare--log-edit-widget-value-get
+  ;; Embedded widgets.
+  :hare-paths nil
+  :hare-text nil)
+
+(defun hare--log-edit-widget-value-create (widget)
+  "Insert the printed representation of the value."
+  (let ((message (or (widget-get widget :value) "")))
+    (unless (stringp message)
+      (error "Invalid value"))
+    (insert "Log Message: ")
+    (apply #'widget-create 'menu-choice
+	   :format "%[ %t %]"
+	   :tag "Edit"
+	   :notify (lambda (widget &rest _ignore)
+		     (hare--form-log-edit-apply-command
+		      (widget-get widget :value)))
+	   '((const
+	      :value edit-clear
+	      :format "%t"
+	      :tag "Clear Log Message")
+	     (const
+	      :value edit-trim
+	      :format "%t"
+	      :tag "Delete Superfluous Whitespace")))
+    (insert ?\s)
+    (apply #'widget-create 'menu-choice
+	   :format "%[ %t %]"
+	   :tag "Tools"
+	   :notify (lambda (widget &rest _ignore)
+		     (hare--form-log-edit-apply-command
+		      (widget-get widget :value)))
+	   '((const
+	      :value tools-diff
+	      :format "%t"
+	      :tag "Show File Differences")
+	     (const
+	      :value tools-files
+	      :format "%t"
+	      :tag "Show File Names")))
+    (insert ?\n ?\n)
+    (let ((text (widget-create 'text
+			       :value message
+			       :format "%v"
+			       :keymap hare--form-log-edit-keymap)))
+      (widget-put widget :hare-text text))))
+
+(defun hare--log-edit-widget-value-set (widget value)
+  "Set the log message of WIDGET to VALUE."
+  (widget-value-set (widget-get widget :hare-text) value))
+
+(defun hare--log-edit-widget-value-get (widget)
+  "Return the log message of WIDGET."
+  (widget-value (widget-get widget :hare-text)))
+
 (defun hare--create-log-edit-widget (paths)
   "Insert a log message field into the form.
 
-Return value is a ‘text’ widget."
+Return value is a ‘hare--log-edit-widget’ widget."
   (unless (bolp)
     (insert ?\n))
-  (insert "Log Message: ")
-  (apply #'widget-create 'menu-choice
-	 :format "%[ %t %]"
-	 :tag "Edit"
-	 :notify (lambda (widget &rest _ignore)
-		   (hare--form-log-edit-apply-command
-		    (widget-get widget :value)))
-	 '((const
-	    :value edit-clear
-	    :format "%t"
-	    :tag "Clear Log Message")
-	   (const
-	    :value edit-trim
-	    :format "%t"
-	    :tag "Delete Superfluous Whitespace")))
-  (insert ?\s)
-  (apply #'widget-create 'menu-choice
-	 :format "%[ %t %]"
-	 :tag "Tools"
-	 :notify (lambda (widget &rest _ignore)
-		   (hare--form-log-edit-apply-command
-		    (widget-get widget :value)))
-	 '((const
-	    :value tools-diff
-	    :format "%t"
-	    :tag "Show File Differences")
-	   (const
-	    :value tools-files
-	    :format "%t"
-	    :tag "Show File Names")))
-  (insert ?\n ?\n)
   (setq hare--form-paths-widget paths)
   (setq hare--form-log-edit-widget
-	(widget-create 'text
-		       :value ""
-		       :format "%v"
-		       :keymap hare--form-log-edit-keymap)))
+	(widget-create 'hare--log-edit-widget
+		       :hare-paths paths)))
 
 (defun hare--create-svn-widget (type &rest options)
   "Insert a Subversion widget into the form.
