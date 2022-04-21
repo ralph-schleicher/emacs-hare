@@ -1312,7 +1312,7 @@ Return value is a ‘hare--paths-widget’ widget."
 (defvar-local hare--form-log-edit-widget nil
   "The text widget for editing the log message.")
 
-(defun hare--form-log-edit-previous-comment (arg)
+(defun hare--log-edit-widget-previous-comment (arg)
   "Like ‘log-edit-previous-comment’."
   (interactive "*p")
   (when-let ((message hare--form-log-edit-widget))
@@ -1323,7 +1323,7 @@ Return value is a ‘hare--paths-widget’ widget."
 	(widget-value-set message (buffer-substring-no-properties
 				   (point-min) (point-max)))))))
 
-(defun hare--form-log-edit-next-comment (arg)
+(defun hare--log-edit-widget-next-comment (arg)
   "Like ‘log-edit-next-comment’."
   (interactive "*p")
   (when-let ((message hare--form-log-edit-widget))
@@ -1334,7 +1334,7 @@ Return value is a ‘hare--paths-widget’ widget."
 	(widget-value-set message (buffer-substring-no-properties
 				   (point-min) (point-max)))))))
 
-(defun hare--form-log-edit-show-diff ()
+(defun hare--log-edit-widget-show-diff ()
   "Like ‘log-edit-show-diff’."
   (interactive)
   (when-let ((fileset (hare--form-fileset-from-paths
@@ -1342,7 +1342,7 @@ Return value is a ‘hare--paths-widget’ widget."
 		       :not-empty t)))
     (vc-diff-internal nil fileset nil nil)))
 
-(defun hare--form-log-edit-show-files ()
+(defun hare--log-edit-widget-show-files ()
   "Like ‘log-edit-show-files’."
   (interactive)
   (when-let ((fileset (hare--form-fileset-from-paths
@@ -1351,17 +1351,17 @@ Return value is a ‘hare--paths-widget’ widget."
     (let ((log-edit-listfun (lambda () (cl-second fileset))))
       (log-edit-show-files))))
 
-(defvar hare--form-log-edit-keymap
+(defvar hare--log-edit-widget-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map widget-text-keymap)
-    (define-key map (kbd "M-p") 'hare--form-log-edit-previous-comment)
-    (define-key map (kbd "M-n") 'hare--form-log-edit-next-comment)
-    (define-key map (kbd "C-c C-d") 'hare--form-log-edit-show-diff)
-    (define-key map (kbd "C-c C-f") 'hare--form-log-edit-show-files)
+    (define-key map (kbd "M-p") 'hare--log-edit-widget-previous-comment)
+    (define-key map (kbd "M-n") 'hare--log-edit-widget-next-comment)
+    (define-key map (kbd "C-c C-d") 'hare--log-edit-widget-show-diff)
+    (define-key map (kbd "C-c C-f") 'hare--log-edit-widget-show-files)
     map)
   "Keymap for editing log messages in a form.")
 
-(defun hare--form-log-edit-apply-command (command)
+(defun hare--log-edit-widget-apply-command (command)
   "Apply a log message command."
   (when-let ((message hare--form-log-edit-widget))
     (cl-ecase command
@@ -1379,10 +1379,10 @@ Return value is a ‘hare--paths-widget’ widget."
 	   (widget-value-set message new))))
       (tools-diff
        ;; Show file differences.
-       (hare--form-log-edit-show-diff))
+       (hare--log-edit-widget-show-diff))
       (tools-files
        ;; Show file names.
-       (hare--form-log-edit-show-files))
+       (hare--log-edit-widget-show-files))
       ())))
 
 (define-widget 'hare--log-edit-widget 'default
@@ -1405,7 +1405,7 @@ Return value is a ‘hare--paths-widget’ widget."
 	   :format "%[ %t %]"
 	   :tag "Edit"
 	   :notify (lambda (widget &rest _ignore)
-		     (hare--form-log-edit-apply-command
+		     (hare--log-edit-widget-apply-command
 		      (widget-get widget :value)))
 	   '((const
 	      :value edit-clear
@@ -1420,7 +1420,7 @@ Return value is a ‘hare--paths-widget’ widget."
 	   :format "%[ %t %]"
 	   :tag "Tools"
 	   :notify (lambda (widget &rest _ignore)
-		     (hare--form-log-edit-apply-command
+		     (hare--log-edit-widget-apply-command
 		      (widget-get widget :value)))
 	   '((const
 	      :value tools-diff
@@ -1434,7 +1434,7 @@ Return value is a ‘hare--paths-widget’ widget."
     (let ((text (widget-create 'text
 			       :value message
 			       :format "%v"
-			       :keymap hare--form-log-edit-keymap)))
+			       :keymap hare--log-edit-widget-keymap)))
       (widget-put widget :hare-text text))))
 
 (defun hare--log-edit-widget-value-set (widget value)
