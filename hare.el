@@ -999,6 +999,9 @@ Value is a ‘hare--path’ structure."
 		      start 'hare-path nil limit)))
       (get-text-property start 'hare-path))))
 
+(defvar-local hare--paths-widget nil
+  "The paths widget for selecting file names.")
+
 (define-widget 'hare--paths-widget 'default
   "A widget for selecting multiple file names.
 The user can select/deselect items interactively.
@@ -1008,7 +1011,7 @@ Value is a HareSVN paths structure."
   :value-create 'hare--paths-widget-value-create
   :value-get 'hare--paths-widget-value-get
   ;; Embedded widgets.
-  :hare-operation nil
+  :hare-set-operation nil
   :hare-checklist nil)
 
 (defun hare--paths-widget-value-create (widget)
@@ -1016,27 +1019,22 @@ Value is a HareSVN paths structure."
   (let ((paths (widget-get widget :value)))
     (unless (hare--paths-p paths)
       (error "Invalid value"))
+    (setq hare--paths-widget widget)
     (insert "Check: ")
     (widget-create 'push-button
                    :notify (lambda (widget &rest _ignore)
-			     (let ((checklist (widget-get
-					       (widget-get widget :hare-paths)
-					       :hare-checklist)))
+			     (let ((checklist (widget-get hare--paths-widget :hare-checklist)))
                                (dolist (button (widget-get checklist :buttons))
 				 (unless (widget-value button)
                                    (widget-checkbox-action button)))))
-		   :hare-paths widget
 		   " All ")
     (insert ?\s)
     (widget-create 'push-button
                    :notify (lambda (widget &rest _ignore)
-			     (let ((checklist (widget-get
-					       (widget-get widget :hare-paths)
-					       :hare-checklist)))
+			     (let ((checklist (widget-get hare--paths-widget :hare-checklist)))
                                (dolist (button (widget-get checklist :buttons))
 				 (when (widget-value button)
                                    (widget-checkbox-action button)))))
-		   :hare-paths widget
                    " None ")
     ;; A menu to define the set operation for the following buttons.
     (insert ?\s ?\s)
@@ -1065,40 +1063,30 @@ Value is a HareSVN paths structure."
 				:format "%t"
 				:tag "XOR"
 				:menu-tag "Symmetric Difference/XOR")))))
-      (widget-put widget :hare-operation operation))
+      (widget-put widget :hare-set-operation operation))
     (insert ?\s ?\s)
     (widget-create 'push-button
                    :notify (lambda (widget &rest _ignore)
-			     (let ((operation (widget-get
-					       (widget-get widget :hare-paths)
-					       :hare-operation))
-				   (checklist (widget-get
-					       (widget-get widget :hare-paths)
-					       :hare-checklist)))
+			     (let ((operation (widget-get hare--paths-widget :hare-set-operation))
+				   (checklist (widget-get hare--paths-widget :hare-checklist)))
 			       (let ((op (widget-get operation :value)))
 				 (dolist (child (widget-get checklist :children))
 				   (hare--paths-widget-apply-set-operation op
 				     (not (hare--path-directory-p
 					   (widget-get child :value)))
 				     (widget-get child :button))))))
-		   :hare-paths widget
                    " Files ")
     (insert ?\s)
     (widget-create 'push-button
                    :notify (lambda (widget &rest _ignore)
-			     (let ((operation (widget-get
-					       (widget-get widget :hare-paths)
-					       :hare-operation))
-				   (checklist (widget-get
-					       (widget-get widget :hare-paths)
-					       :hare-checklist)))
+			     (let ((operation (widget-get hare--paths-widget :hare-set-operation))
+				   (checklist (widget-get hare--paths-widget :hare-checklist)))
 			       (let ((op (widget-get operation :value)))
 				 (dolist (child (widget-get checklist :children))
 				   (hare--paths-widget-apply-set-operation op
 				     (hare--path-directory-p
 				      (widget-get child :value))
 				     (widget-get child :button))))))
-		   :hare-paths widget
                    " Folders ")
     (when (hare--paths-vc-state paths)
       (insert ?\s)
@@ -1106,12 +1094,8 @@ Value is a HareSVN paths structure."
 	     :format "%[ %t %]"
 	     :tag "VC State"
 	     :notify (lambda (widget &rest _ignore)
-		       (let ((operation (widget-get
-					 (widget-get widget :hare-paths)
-					 :hare-operation))
-			     (checklist (widget-get
-					 (widget-get widget :hare-paths)
-					 :hare-checklist)))
+		       (let ((operation (widget-get hare--paths-widget :hare-set-operation))
+			     (checklist (widget-get hare--paths-widget :hare-checklist)))
 			 (let ((state (widget-get widget :value))
 			       (op (widget-get operation :value)))
 			   (dolist (child (widget-get checklist :children))
@@ -1119,7 +1103,6 @@ Value is a HareSVN paths structure."
 			       (eq state (hare--path-vc-state
 					  (widget-get child :value)))
 			       (widget-get child :button))))))
-	     :hare-paths widget
 	     (mapcar (lambda (state)
 		       `(const
 			 :value ,state
@@ -1131,7 +1114,6 @@ Value is a HareSVN paths structure."
     (insert (directory-file-name (abbreviate-file-name (hare--paths-parent paths))) ?: ?\n)
     (let ((checklist (apply #'widget-create 'checklist
 			    :entry-format " %b %v\n"
-			    :hare-paths widget
 			    (mapcar (lambda (path)
 				      `(hare--path-widget :value ,path))
 				    (hare--paths-children paths)))))
@@ -1219,9 +1201,9 @@ See ‘hare--path-widget-directory-keymap’"
   "Insert or remove the files and directories of the subdirectory at point."
   (when-let* ((path-widget (hare--path-widget-at-point))
 	      (path (widget-get path-widget :value))
-	      (checklist (widget-get path-widget :parent))
-	      (paths-widget (widget-get checklist :hare-paths))
-	      (paths (widget-get paths-widget :value)))
+	      (paths-widget hare--paths-widget)
+	      (paths (widget-get paths-widget :value))
+	      (checklist (widget-get paths-widget :hare-checklist)))
     (when (funcall fun paths path)
       (let (;; Backup button values.
 	    (checked (mapcar (lambda (child)
@@ -1236,7 +1218,6 @@ See ‘hare--path-widget-directory-keymap’"
 	;; sync the code with ‘hare--paths-widget-value-create’.
 	(setq checklist (apply #'widget-create 'checklist
 			       :entry-format " %b %v\n"
-			       :hare-paths paths-widget
 			       (mapcar (lambda (path)
 					 `(hare--path-widget :value ,path))
 				       (hare--paths-children paths))))
@@ -1251,7 +1232,7 @@ See ‘hare--path-widget-directory-keymap’"
 	;; Update the paths widget.
 	(widget-put paths-widget :hare-checklist checklist)))))
 
-(defun hare--form-fileset-from-paths (object &rest options)
+(defun hare--fileset-from-paths (object &rest options)
   "Create a VC fileset from a paths object.
 
 If keyword argument NOT-EMPTY is non-nil,
@@ -1290,9 +1271,6 @@ Return nil if no fileset can be determined."
     (unless (plist-get options :no-message)
       (ignore (message "Can not determine any file")))))
 
-(defvar-local hare--form-paths-widget nil
-  "The paths widget for selecting file names.")
-
 (defun hare--create-paths-widget (paths checked)
   "Insert a list of file names into the form.
 The user can select/deselect items interactively.
@@ -1304,50 +1282,47 @@ Second argument CHECKED determines the initial state
 Return value is a ‘hare--paths-widget’ widget."
   (unless (bolp)
     (insert ?\n))
-  (setq hare--form-paths-widget
-	(widget-create 'hare--paths-widget
-		       :hare-checked (not (null checked))
-		       :value paths)))
+  (widget-create 'hare--paths-widget
+		 :hare-checked (not (null checked))
+		 :value paths))
 
-(defvar-local hare--form-log-edit-widget nil
-  "The text widget for editing the log message.")
+(defvar-local hare--log-edit-widget nil
+  "The widget for editing the log message.")
 
 (defun hare--log-edit-widget-previous-comment (arg)
   "Like ‘log-edit-previous-comment’."
   (interactive "*p")
-  (when-let ((message hare--form-log-edit-widget))
+  (when-let ((log-edit-widget hare--log-edit-widget))
     (with-temp-buffer
       (log-edit-previous-comment arg)
       (when (buffer-modified-p)
 	(hare--trim-log-message)
-	(widget-value-set message (buffer-substring-no-properties
-				   (point-min) (point-max)))))))
+	(widget-value-set log-edit-widget (buffer-substring-no-properties
+					   (point-min) (point-max)))))))
 
 (defun hare--log-edit-widget-next-comment (arg)
   "Like ‘log-edit-next-comment’."
   (interactive "*p")
-  (when-let ((message hare--form-log-edit-widget))
+  (when-let ((log-edit-widget hare--log-edit-widget))
     (with-temp-buffer
       (log-edit-next-comment arg)
       (when (buffer-modified-p)
 	(hare--trim-log-message)
-	(widget-value-set message (buffer-substring-no-properties
-				   (point-min) (point-max)))))))
+	(widget-value-set log-edit-widget (buffer-substring-no-properties
+					   (point-min) (point-max)))))))
 
 (defun hare--log-edit-widget-show-diff ()
   "Like ‘log-edit-show-diff’."
   (interactive)
-  (when-let ((fileset (hare--form-fileset-from-paths
-		       hare--form-paths-widget
-		       :not-empty t)))
+  (when-let* ((paths-widget hare--paths-widget)
+	      (fileset (hare--fileset-from-paths paths-widget :not-empty t)))
     (vc-diff-internal nil fileset nil nil)))
 
 (defun hare--log-edit-widget-show-files ()
   "Like ‘log-edit-show-files’."
   (interactive)
-  (when-let ((fileset (hare--form-fileset-from-paths
-		       hare--form-paths-widget
-		       :not-empty t)))
+  (when-let* ((paths-widget hare--paths-widget)
+	      (fileset (hare--fileset-from-paths paths-widget :not-empty t)))
     (let ((log-edit-listfun (lambda () (cl-second fileset))))
       (log-edit-show-files))))
 
@@ -1363,20 +1338,20 @@ Return value is a ‘hare--paths-widget’ widget."
 
 (defun hare--log-edit-widget-apply-command (command)
   "Apply a log message command."
-  (when-let ((message hare--form-log-edit-widget))
+  (when-let ((log-edit-widget hare--log-edit-widget))
     (cl-ecase command
       (edit-clear
        ;; Clear log message.
-       (widget-value-set message ""))
+       (widget-value-set log-edit-widget ""))
       (edit-trim
        ;; Delete superfluous whitespace.
-       (let* ((old (widget-value message))
+       (let* ((old (widget-value log-edit-widget))
 	      (new (with-temp-buffer
 		     (insert old)
 		     (hare--trim-log-message)
 		     (buffer-substring (point-min) (point-max)))))
 	 (unless (string-equal old new)
-	   (widget-value-set message new))))
+	   (widget-value-set log-edit-widget new))))
       (tools-diff
        ;; Show file differences.
        (hare--log-edit-widget-show-diff))
@@ -1392,7 +1367,6 @@ Return value is a ‘hare--paths-widget’ widget."
   :value-set 'hare--log-edit-widget-value-set
   :value-get 'hare--log-edit-widget-value-get
   ;; Embedded widgets.
-  :hare-paths nil
   :hare-text nil)
 
 (defun hare--log-edit-widget-value-create (widget)
@@ -1400,6 +1374,7 @@ Return value is a ‘hare--paths-widget’ widget."
   (let ((message (or (widget-get widget :value) "")))
     (unless (stringp message)
       (error "Invalid value"))
+    (setq hare--log-edit-widget widget)
     (insert "Log Message: ")
     (apply #'widget-create 'menu-choice
 	   :format "%[ %t %]"
@@ -1445,16 +1420,13 @@ Return value is a ‘hare--paths-widget’ widget."
   "Return the log message of WIDGET."
   (widget-value (widget-get widget :hare-text)))
 
-(defun hare--create-log-edit-widget (paths)
+(defun hare--create-log-edit-widget ()
   "Insert a log message field into the form.
 
 Return value is a ‘hare--log-edit-widget’ widget."
   (unless (bolp)
     (insert ?\n))
-  (setq hare--form-paths-widget paths)
-  (setq hare--form-log-edit-widget
-	(widget-create 'hare--log-edit-widget
-		       :hare-paths paths)))
+  (widget-create 'hare--log-edit-widget))
 
 (defun hare--create-svn-widget (type &rest options)
   "Insert a Subversion widget into the form.
@@ -1945,7 +1917,7 @@ Do not commit externals with a fixed revision."))
       (hare--form-horizontal-line)
       (setq targets (hare--create-paths-widget paths t))
       (hare--form-horizontal-line)
-      (setq message (hare--create-log-edit-widget targets))
+      (setq message (hare--create-log-edit-widget))
       ())))
 
 (defun hare--svn-update (targets &rest options)
