@@ -1241,6 +1241,8 @@ If keyword argument NOT-EMPTY is non-nil,
  return nil if the fileset is empty.
 If keyword argument NO-MESSAGE is non-nil,
  don't print a status message.
+If keyword argument RELATIVE is non-nil,
+ gather relative file names.
 
 Return nil if no fileset can be determined."
   (if-let* ((type (cond ((widgetp object)
@@ -1256,16 +1258,19 @@ Return nil if no fileset can be determined."
 			 (vc-responsible-backend
 			  (hare--paths-vc-root paths) t)
 			 (vc-responsible-backend
-			  (hare--paths-parent paths) t))))
+			  (hare--paths-parent paths) t)))
+	    (file-name (if (plist-get options :relative)
+			   #'hare--path-relative
+			 #'hare--path-absolute)))
       (let ((files (cl-case type
 		     (hare--paths-widget
 		      (let (list)
 			(dolist (child (widget-get (widget-get object :hare-checklist) :children))
 			  (when (widget-value (widget-get child :button))
-			    (push (hare--path-absolute (widget-value child)) list)))
+			    (push (funcall file-name (widget-value child)) list)))
 			(nreverse list)))
 		     (hare--paths
-		      (mapcar #'hare--path-absolute (hare--paths-children object))))))
+		      (mapcar file-name (hare--paths-children object))))))
 	(if (and (null files) (plist-get options :not-empty))
 	    (unless (plist-get options :no-message)
 	      (ignore (message "No files")))
@@ -1274,7 +1279,7 @@ Return nil if no fileset can be determined."
       (ignore (message "Can not determine any file")))))
 
 (defun hare--create-paths-widget (paths checked)
-  "Insert a list of file names into the form.
+   "Insert a list of file names into the form.
 The user can select/deselect items interactively.
 
 First argument PATHS is a HareSVN paths structure.
@@ -1328,6 +1333,34 @@ Return value is a ‘hare--paths-widget’ widget."
     (let ((log-edit-listfun (lambda () (cl-second fileset))))
       (log-edit-show-files))))
 
+(defun hare--log-edit-widget-insert-changelog (&optional use-first)
+  "Like ‘log-edit-insert-changelog’."
+  (interactive "P")
+  (when-let* ((log-edit-widget hare--log-edit-widget)
+	      (paths-widget hare--paths-widget)
+	      (fileset (hare--fileset-from-paths paths-widget :not-empty t :relative t)))
+    (with-temp-buffer
+      (let ((log-edit-listfun (lambda () (cl-second fileset))))
+	(log-edit-insert-changelog use-first))
+      (hare--trim-log-message)
+      (widget-value-set log-edit-widget (buffer-substring-no-properties
+					 (point-min) (point-max))))))
+
+(defun hare--log-edit-widget-generate-changelog-from-diff ()
+  "Like ‘log-edit-generate-changelog-from-diff’."
+  (interactive)
+  (when-let* ((log-edit-widget hare--log-edit-widget)
+	      (paths-widget hare--paths-widget)
+	      (fileset (hare--fileset-from-paths paths-widget :not-empty t)))
+    (with-temp-buffer
+      (change-log-insert-entries
+       (with-temp-buffer
+	 (vc-diff-internal nil fileset nil nil nil (current-buffer))
+	 (diff-add-log-current-defuns)))
+      (hare--trim-log-message)
+      (widget-value-set log-edit-widget (buffer-substring-no-properties
+					 (point-min) (point-max))))))
+
 (defvar hare--log-edit-widget-keymap
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map widget-text-keymap)
@@ -1335,6 +1368,8 @@ Return value is a ‘hare--paths-widget’ widget."
     (define-key map (kbd "M-n") 'hare--log-edit-widget-next-comment)
     (define-key map (kbd "C-c C-d") 'hare--log-edit-widget-show-diff)
     (define-key map (kbd "C-c C-f") 'hare--log-edit-widget-show-files)
+    (define-key map (kbd "C-c C-a") 'hare--log-edit-widget-insert-changelog)
+    (define-key map (kbd "C-c C-w") 'hare--log-edit-widget-generate-changelog-from-diff)
     map)
   "Keymap for editing log messages in a form.")
 
