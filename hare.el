@@ -25,6 +25,15 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+;;; Commentary:
+
+;; In Dired, enter ‘M-x hare-dired-mode RET’ to display the VC state
+;; icon in front of a file name.  Clicking with the mouse on the VC
+;; state icon pops up a menu for running VC commands.  If the Dired
+;; buffer displays a part of a Subversion working copy, the menu is
+;; Subversion specific.  Otherwise, the menu is equal to the generic
+;; VC menu.
+
 ;;; Code:
 
 (require 'cl-lib)
@@ -44,7 +53,7 @@
   :group 'dired)
 
 (defun hare--vc-state (file backend)
-  "Return the HareSVN VC state of FILE.
+  "Return the HareSVN VC state of FILE for BACKEND.
 
 Value is the VC state symbol as returned by the ‘vc-state’ function,
 or ‘locked’ if the VC state indicates that the file is locked by some
@@ -53,7 +62,7 @@ other user."
     (if (stringp state) 'locked state)))
 
 (defun hare--vc-state-refresh (file backend)
-  "Return the updated HareSVN VC state of FILE.
+  "Return the updated HareSVN VC state of FILE for BACKEND.
 
 Value is the VC state symbol as returned by the ‘vc-state’ function,
 or ‘locked’ if the VC state indicates that the file is locked by some
@@ -117,7 +126,7 @@ Value PROPERTIES is a property list.")
   :group 'hare)
 
 (defsubst hare--display-graphic-p ()
-  "Return true if VC states are visualized with the help of graphic icons."
+  "Return non-nil if VC states are visualized with the help of graphic icons."
   (and hare-display-icons (display-graphic-p)))
 
 (defvar hare-icon-directory
@@ -226,6 +235,7 @@ Optional second argument TEXT-PROPERTIES are additional text properties."
 
 ;;;###autoload
 (defun hare-list-vc-states ()
+  "Display the HareSVN version control states in a help window."
   (interactive)
   (hare-update-icons)
   (with-help-window "*VC States*"
@@ -381,11 +391,15 @@ Case is not significant if optional argument IGNORE-CASE is non-nil."
   "Whether or not to ignore case when comparing file names.")
 
 (defun hare--file-name-equal (name1 name2)
-  "Like ‘hare--string-equal’ but consider ‘hare--file-name-ignore-case’."
+  "Return non-nil if NAME1 is equal to NAME2 in lexicographic order.
+Whether or not case is significant depends on the current value of
+the variable ‘hare--file-name-ignore-case’."
   (hare--string-equal name1 name2 hare--file-name-ignore-case))
 
 (defun hare--file-name-lessp (name1 name2)
-  "Like ‘hare--string-lessp’ but consider ‘hare--file-name-ignore-case’."
+  "Return non-nil if NAME1 is less than NAME2 in lexicographic order.
+Whether or not case is significant depends on the current value of
+the variable ‘hare--file-name-ignore-case’."
   (hare--string-lessp name1 name2 hare--file-name-ignore-case))
 
 (defun hare--expand-file-name (relative directory)
@@ -779,6 +793,10 @@ Second argument MESSAGE is the log message."
 (defun hare--temp-buffer-window (&optional buffer-name buffer-action)
   "Create a temporary HareSVN buffer and show it in a window.
 Does not change the selected window or the current buffer.
+
+Optional arguments BUFFER-NAME and BUFFER-ACTION override
+ ‘hare--temp-buffer-name’ and ‘hare--temp-buffer-action’
+ respectively.
 
 Return value is the window displaying the buffer.  The buffer
 itself is empty."
