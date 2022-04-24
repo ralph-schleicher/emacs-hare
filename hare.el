@@ -538,7 +538,7 @@ If keyword argument VC-STATE is non-nil, determine the VC state of
  who's VC state is a member of the list.  If the list starts with
  ‘not’, complement the test.
 
-Return value is a HareSVN paths structure.  If there are no childen,
+Return value is a HareSVN paths structure.  If there are no children,
 signal an error unless keyword argument NO-CHILDREN is non-nil."
   (let (parent children root backend)
     ;; Collect absolute path names.  Expand file name abbreviations,
