@@ -1847,26 +1847,51 @@ See ‘hare--collect-paths’ for the meaning of OPTIONS."
 
 (defun hare--svn (buffer success targets command &rest options)
   "Execute a ‘svn’ command.
+
+First argument BUFFER is the process buffer.  Value is either a
+ buffer or a cons cell of the form ‘(BUFFER . BUFFER-OPTIONS)’
+ where BUFFER-OPTIONS is a property list.
+Second argument SUCCESS is the process status indicating a successful
+ command execution.
+Third argument TARGETS are the targets for the Subversion command.
+ Value is either a list of absolute file names or a HareSVN paths
+ structure.
+Fourth argument COMMAND is the Subversion command to be executed.
+Remaining arguments OPTIONS are any additional command line options.
+
 Return true if the command succeeds."
   (unless (listp vc-svn-global-switches)
     (error "User option ‘vc-svn-global-switches’ is not a list, please fix it"))
   (let ((came-from (current-buffer))
+	(buffer-options ())
 	(status nil))
+    (when (consp buffer)
+      (setq buffer-options (cdr buffer)
+	    buffer (car buffer)))
     (save-selected-window
       (with-current-buffer buffer
 	(let ((inhibit-read-only t)
 	      (comint-file-name-quote-list shell-file-name-quote-list))
-	  (unless (derived-mode-p 'hare-process-mode)
-	    (hare-process-mode))
-	  (goto-char (point-max))
-	  (when (bobp)
-	    (insert "-*- mode: hare-process; ")
-	    (when (hare--paths-p targets)
-	      (when-let ((root (hare--paths-vc-root targets)))
+	  (let* ((mode (or (plist-get buffer-options :major-mode) 'hare-process-mode))
+		 (mode-name (replace-regexp-in-string "-mode\\'" "" (symbol-name mode))))
+	    (unless (eq major-mode mode)
+	      (funcall mode))
+	    (goto-char (point-max))
+	    (when (bobp)
+	      ;; Initial setup.
+	      (let ((dir (plist-get buffer-options :default-directory)))
+		(cond ((stringp dir)
+		       (setq default-directory (file-name-as-directory dir)))
+		      ((hare--paths-p targets)
+		       (when-let ((root (hare--paths-vc-root targets)))
+			 (setq default-directory (hare--paths-vc-root targets)))))))
+	    (when (and (bobp) (not (plist-get buffer-options :omit-first-line)))
+	      (insert "-*- mode: " mode-name "; ")
+	      (when (local-variable-p 'default-directory)
 		(insert "default-directory: "
-			(with-output-to-string (prin1 root))
-			"; ")))
-	    (insert "-*-" ?\n ?\n))
+			(with-output-to-string (prin1 default-directory))
+			"; "))
+	      (insert "-*-" ?\n ?\n)))
 	  (unless (bolp)
 	    (insert ?\n))
 	  (when (hare--paths-p targets)
@@ -1889,8 +1914,20 @@ Return true if the command succeeds."
 	      (insert ?\s (comint-quote-filename argument)))
 	    (insert ?\n ?\n)
 	    (let ((mark (point)))
-	      (setq status (ignore-errors
-			     (apply #'call-process vc-svn-program nil (list buffer t) t arguments)))
+	      (setq status (let ((output (plist-get buffer-options :output-buffer)))
+			     (if (not (buffer-live-p output))
+				 ;; Insert output into the process buffer.
+				 (setq output buffer)
+			       (insert "[Output diverted to buffer ‘")
+			       (insert-text-button
+				(buffer-name output)
+				'action (lambda (&rest _ignore)
+					  (switch-to-buffer output))
+				'follow-link t)
+			       (insert "’]")
+			       (insert ?\n))
+			     (ignore-errors
+			       (apply #'call-process vc-svn-program nil (list output t) t arguments))))
 	      (unless (bolp)
 		(insert ?\n))
 	      (when (< mark (point))
@@ -2208,6 +2245,92 @@ their version control state.  Otherwise, modified items are not removed."))
       (setq targets (hare--create-paths-widget paths t))
       ())))
 
+(defcustom hare-svn-diff-output "*vc-diff*"
+  "Destination for the output of the ‘svn diff’ command.
+If the value is nil, do not divert the process output, i.e. insert it
+into the process buffer.  For this case, you might want to exclude the
+‘svn-diff’ operation from the variable ‘hare-delete-process-window’ so
+that the window displaying the process buffer persists.
+If the value is a string, divert the output to the buffer of this name."
+  :type '(choice (const :tag "Embedded" nil)
+		 (string :tag "Buffer Name"))
+  :group 'hare)
+
+(defun hare--svn-diff (targets &rest options)
+  "Run the ‘svn diff’ command."
+  (let (status process-buffer output-buffer)
+    (setq status (hare--with-process-window (buffer '(svn-diff))
+		   (setq process-buffer buffer
+			 output-buffer buffer)
+		   (let ((dest (cl-etypecase hare-svn-diff-output
+				 (null
+				  (nconc (list buffer :omit-first-line t)
+					 (when (hare--paths-p targets)
+					   (list :default-directory (hare--paths-parent targets)))))
+				 (string
+				  (let ((tem (get-buffer-create hare-svn-diff-output)))
+				    (setq output-buffer tem)
+				    (with-current-buffer tem
+				      (kill-all-local-variables)
+				      (setq buffer-read-only nil)
+				      (erase-buffer))
+				    (list buffer :output-buffer tem))))))
+		     (apply #'hare--svn dest 0 targets "diff"
+			    (nconc (when-let ((revision (plist-get options :revision)))
+				     (list "--revision" (hare--string revision)))
+				   (when-let ((change (plist-get options :change)))
+				     (list "--change" (hare--string change)))
+				   (when-let ((depth (plist-get options :depth)))
+				     (list "--depth" (hare--string depth)))
+				   (when (plist-get options :no-diff-added)
+				     (list "--no-diff-added"))
+				   (when (plist-get options :no-diff-deleted)
+				     (list "--no-diff-deleted"))
+				   (when (plist-get options :ignore-properties)
+				     (list "--ignore-properties"))
+				   (when (plist-get options :properties-only)
+				     (list "--properties-only"))
+				   (when (plist-get options :show-copies-as-adds)
+				     (list "--show-copies-as-adds"))
+				   (when (plist-get options :notice-ancestry)
+				     (list "--notice-ancestry"))
+				   (when (plist-get options :summarize)
+				     (list "--summarize"))
+				   (when (plist-get options :force)
+				     (list "--force"))
+				   (when (plist-get options :git)
+				     (list "--git")))))))
+    (cond ((eq process-buffer output-buffer)
+	   (with-current-buffer process-buffer
+	     (diff-mode)))
+	  (;; Whether or not to display the output buffer.
+	   (and status
+		(with-current-buffer output-buffer
+		  (goto-char (point-min))
+		  (if (save-excursion
+			(skip-chars-forward " \t\n")
+			(eobp))
+		      (ignore (message "No differences")) ;nil
+		    ;; Output buffer is not empty.
+		    (when (hare--paths-p targets)
+		      (setq default-directory (hare--paths-parent targets)))
+		    (setq buffer-read-only t)
+		    (diff-mode)
+		    t)))
+	   (let ((display-buffer-alist `((".*" . ,hare--temp-buffer-action))))
+	     (display-buffer output-buffer)))
+	  (t
+	   (let ((kill-buffer-query-functions ()))
+	     (kill-buffer output-buffer))))
+    status))
+
+(defun hare-svn-diff (&optional _arg)
+  "Display local modifications in a working copy."
+  (interactive "P")
+  (let ((paths (hare--svn-collect-paths :vc-state t)))
+    (hare--svn-diff paths)
+    ()))
+
 (defun hare--svn-status (targets &rest options)
   "Run the ‘svn status’ command."
   (hare--with-process-window (buffer '(svn-status))
@@ -2346,6 +2469,9 @@ Also operate on externals defined by ‘svn:externals’ properties."))
     (bindings--define-key menu [hare-svn-status]
       '(menu-item "Status..." hare-svn-status
 		  :help "Print the status of working copy files and directories"))
+    (bindings--define-key menu [hare-svn-diff]
+      '(menu-item "Diff" hare-svn-diff
+		  :help "Display local modifications in a working copy"))
     (bindings--define-key menu [hare--svn-separator-2]
       menu-bar-separator)
     (bindings--define-key menu [hare-svn-revert]
