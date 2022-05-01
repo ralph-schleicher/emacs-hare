@@ -1032,7 +1032,9 @@ Value is a HareSVN paths structure."
   :value-get 'hare--paths-widget-value-get
   ;; Embedded widgets.
   :hare-set-operation nil
-  :hare-checklist nil)
+  :hare-checklist nil
+  ;; Options.
+  :hare-checked t)
 
 (defun hare--paths-widget-value-create (widget)
   "Insert the printed representation of the value."
@@ -1137,7 +1139,7 @@ Value is a HareSVN paths structure."
 			    (mapcar (lambda (path)
 				      `(hare--path-widget :value ,path))
 				    (hare--paths-children paths)))))
-      (let ((flag (widget-get widget :hare-checked)))
+      (let ((flag (not (null (widget-get widget :hare-checked)))))
 	(dolist (button (widget-get checklist :buttons))
           (unless (eq (widget-value button) flag)
             (widget-checkbox-action button))))
@@ -1295,21 +1297,6 @@ Return nil if no fileset can be determined."
 	  (list backend files)))
     (unless (plist-get options :no-message)
       (ignore (message "Can not determine any file")))))
-
-(defun hare--create-paths-widget (paths checked)
-   "Insert a list of file names into the form.
-The user can select/deselect items interactively.
-
-First argument PATHS is a HareSVN paths structure.
-Second argument CHECKED determines the initial state
- of the check list items.
-
-Return value is a ‘hare--paths-widget’ widget."
-  (unless (bolp)
-    (insert ?\n))
-  (widget-create 'hare--paths-widget
-		 :hare-checked (not (null checked))
-		 :value paths))
 
 (defvar-local hare--log-edit-widget nil
   "The widget for editing the log message.")
@@ -1475,13 +1462,179 @@ Return value is a ‘hare--paths-widget’ widget."
   "Return the log message of WIDGET."
   (widget-value (widget-get widget :hare-text)))
 
-(defun hare--create-log-edit-widget ()
-  "Insert a log message field into the form.
+(defconst hare--date-regexp
+  (rx-let ((year (or (= 4 (char "0-9")) (and (char "1-9") (>= 4 (char "0-9")))))
+           (month (or (and ?0 (char "0-9")) (and ?1 (char "0-2"))))
+           (day (or (and (char "0-2") (char "0-9")) (and ?3 (char "0-1"))))
+           (hour (or (and (char "0-1") (char "0-9")) (and ?2 (char "0-3"))))
+           (minute (and (char "0-5") (char "0-9")))
+           (second (and (char "0-5") (char "0-9"))))
+    (rx (or
+         ;; Basic format.
+         (and year month day
+              (? (and ?T
+                      hour (? (and minute (? second)))
+                      (? (or ?Z (and (char ?+ ?-) hour (? minute)))))))
+         ;; Extended format.
+         (and year ?- month ?- day
+              (? (and (or (+ ?\s) ?T)
+                      hour (? (and ?: minute (? (and ?: second))))
+                      (? (or ?Z (and (char ?+ ?-) hour (? (and ":" minute)))))))))))
+  "Regexp matching an ISO 8601 date in basic or extended format.")
 
-Return value is a ‘hare--log-edit-widget’ widget."
-  (unless (bolp)
-    (insert ?\n))
-  (widget-create 'hare--log-edit-widget))
+(defun hare--date (time &optional days)
+  "Return the ISO 8601 date for TIME.
+
+Optional argument DAYS is the number of days before or after TIME.
+A positive value counts forward."
+  (when (null time)
+    (setq time (current-time)))
+  (format-time-string "%+4Y-%m-%d"
+		      (if (null days)
+			  time
+			(time-add time (* days 86400)))))
+
+(defun hare--date-and-time (time &optional seconds)
+  "Return the ISO 8601 date for TIME.
+The date includes the current time.
+
+If optional argument SECONDS is non-nil, the current time includes the
+second of the minute.  Otherwise, the current time is truncated to the
+current minute of the hour."
+  (when (null time)
+    (setq time (current-time)))
+  (format-time-string (if seconds
+			  "%+4Y-%m-%d %H:%M:%S"
+			"%+4Y-%m-%d %H:%M")
+		      time))
+
+(defun hare--insert-revision-date (arg)
+  "Insert the revision date for today at point.
+
+A numeric prefix argument specifies the number of days before or after
+today.  A positive value counts forward.  A non-numeric prefix argument
+means to include the current time.
+
+The revision date is rounded up to the next time unit."
+  (interactive "P")
+  (let* ((time (current-time))
+	 (date (if (consp arg)
+		   (let ((seconds (> (car arg) 4)))
+		     (hare--date-and-time
+		      (time-add time (if seconds 1 60)) seconds))
+		 (hare--date
+		  time (1+ (if (null arg) 0 (prefix-numeric-value arg)))))))
+    (if-let ((widget (widget-field-at (point))))
+	(widget-value-set widget date)
+      (barf-if-buffer-read-only)
+      (insert date))))
+
+(defvar hare--revision-date-keymap
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map widget-text-keymap)
+    (define-key map (kbd "C-c .") 'hare--insert-revision-date)
+    map)
+  "Keymap for a revision date widget.")
+
+(define-widget 'hare--svn-revision-date 'string
+  "A Subversion revision date widget."
+  :tag "Revision Date"
+  :size 32 ;{YYYY-MM-DD hh:mm:ss.sss±hh:mm}
+  :valid-regexp (concat "\\`{?" hare--date-regexp "}?\\'")
+  :keymap hare--revision-date-keymap
+  :value-get 'hare--svn-revision-date-value-get)
+
+(defun hare--svn-revision-date-value-get (widget)
+  "Return the value of WIDGET."
+  (let ((date (string-trim (widget-get widget :value))))
+    (unless (string-prefix-p "{" date)
+      (setq date (concat "{" date)))
+    (unless (string-suffix-p "}" date)
+      (setq date (concat date "}")))
+    date))
+
+;; See https://svnbook.red-bean.com/en/1.7/svn.tour.revs.specifiers.html.
+(define-widget 'hare--svn-revision 'menu-choice
+  "A widget for selecting a specific Subversion revision."
+  :value nil
+  :format "%t %[ Value Menu %]: %v"
+  :tag "Revision"
+  :help-echo "Specify a revision"
+  :args `((const
+	   :value nil
+	   :format "%t\n%h"
+	   :menu-tag "None"
+	   :doc "The revision is not specified.")
+	  (integer
+	   :value 1
+	   :format "%{%t%}: %v\n%h"
+	   :tag "Number"
+	   :size 10
+	   :valid-regexp "\\`[1-9][0-9]*\\'"
+	   :doc "The revision number.")
+	  (hare--svn-revision-date
+	   :format "%{%t%}: %v\n%h"
+	   :tag "Date"
+	   :doc "The most recent revision as of that date.")
+	  (const
+	   :value HEAD
+	   :format "%t\n%h"
+	   :doc "The latest revision in the repository.")
+	  (const
+	   :value BASE
+	   :format "%t\n%h"
+	   :doc "The revision of an item in the working copy.")
+	  (const
+	   :value COMMITTED
+	   :format "%t\n%h"
+	   :doc "The revision of an item's last commit before or at ‘BASE’.")
+	  (const
+	   :value PREV
+	   :format "%t\n%h"
+	   :doc "The revision before ‘COMMITTED’.")))
+
+(define-widget 'hare--svn-revision-choice 'radio-button-choice
+  "A widget for selecting a Subversion revision range."
+  :value nil
+  :entry-format " %b %v"
+  :args `((const
+	   :value nil
+	   :format "%t\n\n"
+	   :tag "Local modifications.")
+	  (group
+	   :value (change nil)
+	   :format "%v\n"
+	   (const
+	    :value change
+	    :format "%t\n"
+	    :tag "Changes made by a revision.")
+	   (menu-choice
+	    :format "%t %[ Value Menu %]: %v"
+	    :tag "Revision"
+	    :help-echo "Specify a revision"
+	    (const
+	     :value nil
+	     :format "%t\n%h"
+	     :menu-tag "None"
+	     :doc "The revision is not specified.")
+	    (integer
+	     :value 1
+	     :format "%{%t%}: %v\n%h"
+	     :tag "Number"
+	     :size 10
+	     :valid-regexp "\\`[1-9][0-9]*\\'"
+	     :doc "The revision number.")))
+	  (group
+	   :value (revision BASE nil)
+	   :format "%v"
+	   (const
+	    :value revision
+	    :format "%t\n"
+	    :tag "Differences between two revisions.")
+	   (hare--svn-revision
+	    :tag "From Revision")
+	   (hare--svn-revision
+	    :tag "To Revision"))))
 
 (defun hare--create-svn-widget (type &rest options)
   "Insert a Subversion widget into the form.
@@ -1491,7 +1644,7 @@ Return value is the widget handle."
   (cl-case type
     (accept
      (apply #'widget-create 'menu-choice
-	    :value (or (plist-get options :value) 'postpone)
+	    :value 'postpone
 	    :tag "Conflict Resolution"
 	    :format "%t %[ Value Menu %]: %v"
 	    :help-echo "Define the action for automatic conflict resolution"
@@ -1642,47 +1795,6 @@ children, its children's children, and so on to full recursion.")
 		       :menu-tag "Exclude"
 		       :doc "\
 Exclude the immediate target of the operation from the working copy.")))))))
-    (revision
-     ;; See https://svnbook.red-bean.com/en/1.7/svn.tour.revs.specifiers.html.
-     (apply #'widget-create 'menu-choice
-	    :tag "Revision"
-	    :format "%t %[ Value Menu %]: %v"
-	    :help-echo "Specify a revision"
-	    `((const
-	       :value nil
-	       :format "%t\n%h"
-	       :menu-tag "None"
-	       :doc "The revision is not specified.")
-	      (integer
-	       :value 1
-	       :format "%{%t%}: %v\n%h"
-	       :tag "Number"
-	       :size 10
-	       :valid-regexp "\\`[1-9][0-9]*\\'"
-	       :doc "The revision number.")
-	      (string
-	       :value ,(format-time-string "{%+4Y-%m-%d}" (time-add (current-time) (* 24 60 60)))
-	       :format "%{%t%}: %v\n%h"
-	       :tag "Date"
-	       :size 32 ;{YYYY-MM-DD hh:mm:ss.sss±hh:mm}
-	       :valid-regexp "\\`{[ 0-9TZ.:+-]+}\\'"
-	       :doc "The most recent revision in the repository as of that date.")
-	      (const
-	       :value HEAD
-	       :format "%t\n%h"
-	       :doc "The latest revision in the repository.")
-	      (const
-	       :value BASE
-	       :format "%t\n%h"
-	       :doc "The revision of an item in the working copy.")
-	      (const
-	       :value COMMITTED
-	       :format "%t\n%h"
-	       :doc "The revision of an item's last commit before or at ‘BASE’.")
-	      (const
-	       :value PREV
-	       :format "%t\n%h"
-	       :doc "The revision before ‘COMMITTED’."))))
     ;; Generic widgets.
     (toggle
      ;; Should provide a :tag and optional :doc option.
@@ -1823,13 +1935,16 @@ Without any form, value is true."
 Without any form, value is true."
   `(not (cl-some #'null (list ,@forms))))
 
-(defun hare--string (object)
+(defun hare--string (object &optional numeric)
   "Return a string described by OBJECT."
   (cl-typecase object
     (string
      object)
     (character
-     (string object))
+     (if numeric
+	 (with-output-to-string
+	   (princ object))
+       (string object)))
     (symbol
      (symbol-name object))
     (t
@@ -1995,9 +2110,6 @@ Return true if the command succeeds."
 			  :depth depth
 			  :no-unlock no-unlock
 			  :include-externals externals)
-      (setq depth (hare--create-svn-widget 'depth
-		    :value 'empty))
-      (insert ?\n)
       (setq no-unlock (hare--create-svn-widget 'checkbox
 			:doc "Don't unlock targets.
 The default is to unlock any locked target after a successful commit."))
@@ -2006,10 +2118,12 @@ The default is to unlock any locked target after a successful commit."))
 			:doc "Include external definitions.
 Also operate on externals defined by ‘svn:externals’ properties.
 Do not commit externals with a fixed revision."))
+      (insert ?\n)
+      (setq depth (hare--create-svn-widget 'depth :value 'empty))
       (hare--form-horizontal-line)
-      (setq targets (hare--create-paths-widget paths t))
+      (setq targets (widget-create 'hare--paths-widget :value paths))
       (hare--form-horizontal-line)
-      (setq message (hare--create-log-edit-widget))
+      (setq message (widget-create 'hare--log-edit-widget))
       ())))
 
 (defun hare--svn-update (targets &rest options)
@@ -2017,7 +2131,7 @@ Do not commit externals with a fixed revision."))
   (hare--with-process-window (buffer '(svn-update))
     (apply #'hare--svn buffer 0 targets "update"
 	   (nconc (when-let ((revision (plist-get options :revision)))
-		    (list "--revision" (hare--string revision)))
+		    (list "--revision" (hare--string revision t)))
 		  (when-let ((depth (plist-get options :depth)))
 		    (list "--depth" (hare--string depth)))
 		  (when-let ((set-depth (plist-get options :set-depth)))
@@ -2052,9 +2166,7 @@ repository."
 			  :force force
 			  :parents parents
 			  :ignore-externals externals)
-      (setq revision (hare--create-svn-widget 'revision))
-      (insert ?\n)
-      (setq depth (hare--create-svn-widget 'depth))
+      (setq revision (widget-create 'hare--svn-revision))
       (insert ?\n)
       (setq set-depth (hare--create-svn-widget 'set-depth))
       (insert ?\n)
@@ -2082,8 +2194,10 @@ too."))
       (insert ?\n)
       (setq externals (hare--create-svn-widget 'checkbox
 			:doc "Ignore external definitions."))
+      (insert ?\n)
+      (setq depth (hare--create-svn-widget 'depth))
       (hare--form-horizontal-line)
-      (setq targets (hare--create-paths-widget paths t))
+      (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
 
 (defun hare--svn-resolve (targets &rest options)
@@ -2109,13 +2223,12 @@ too."))
 	(hare--svn-resolve targets
 			   :depth depth
 			   :accept accept)
-      (setq depth (hare--create-svn-widget 'depth
-		    :value 'empty))
-      (insert ?\n)
       (setq accept (hare--create-svn-widget 'accept
 		     :value 'working))
+      (insert ?\n)
+      (setq depth (hare--create-svn-widget 'depth :value 'empty))
       (hare--form-horizontal-line)
-      (setq targets (hare--create-paths-widget paths t))
+      (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
 
 (defun hare--svn-add (targets &rest options)
@@ -2154,9 +2267,6 @@ too."))
 		       :no-auto-props (eq auto-props nil)
 		       :force force
 		       :parents parents)
-      (setq depth (hare--create-svn-widget 'depth
-		    :value 'empty))
-      (insert ?\n)
       (setq no-ignore (hare--create-svn-widget 'checkbox
 			:doc "Don't apply ignore rules to implicitly added items.
 Subversion uses ignore patterns to determine which items should be
@@ -2176,8 +2286,10 @@ the rest.  Otherwise, error out if a path is already versioned."))
 		      :doc "Add intermediate directories.
 If this option is enabled, add any missing parent directories of the
 target at depth ‘empty’, too."))
+      (insert ?\n)
+      (setq depth (hare--create-svn-widget 'depth :value 'empty))
       (hare--form-horizontal-line)
-      (setq targets (hare--create-paths-widget paths t))
+      (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
 
 (defun hare--svn-delete (targets message &rest options)
@@ -2215,7 +2327,7 @@ The actual removal occurs upon the next commit."
 If this option is enabled, files and directories are removed regardless of
 their version control state.  Otherwise, modified items are not removed."))
       (hare--form-horizontal-line)
-      (setq targets (hare--create-paths-widget paths t))
+      (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
 
 (defun hare--svn-revert (targets &rest options)
@@ -2239,10 +2351,9 @@ their version control state.  Otherwise, modified items are not removed."))
 	"Undo local modifications."
 	(hare--svn-revert targets
 			  :depth depth)
-      (setq depth (hare--create-svn-widget 'depth
-		    :value 'empty))
+      (setq depth (hare--create-svn-widget 'depth :value 'empty))
       (hare--form-horizontal-line)
-      (setq targets (hare--create-paths-widget paths t))
+      (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
 
 (defcustom hare-svn-diff-output "*vc-diff*"
@@ -2258,71 +2369,95 @@ If the value is a string, divert the output to the buffer of this name."
 
 (defun hare--svn-diff (targets &rest options)
   "Run the ‘svn diff’ command."
-  (let (status process-buffer output-buffer)
-    (setq status (hare--with-process-window (buffer '(svn-diff))
-		   (setq process-buffer buffer
-			 output-buffer buffer)
-		   (let ((dest (cl-etypecase hare-svn-diff-output
-				 (null
-				  (nconc (list buffer :omit-first-line t)
-					 (when (hare--paths-p targets)
-					   (list :default-directory (hare--paths-parent targets)))))
-				 (string
-				  (let ((tem (get-buffer-create hare-svn-diff-output)))
-				    (setq output-buffer tem)
-				    (with-current-buffer tem
-				      (kill-all-local-variables)
-				      (setq buffer-read-only nil)
-				      (erase-buffer))
-				    (list buffer :output-buffer tem))))))
-		     (apply #'hare--svn dest 0 targets "diff"
-			    (nconc (when-let ((revision (plist-get options :revision)))
-				     (list "--revision" (hare--string revision)))
-				   (when-let ((change (plist-get options :change)))
-				     (list "--change" (hare--string change)))
-				   (when-let ((depth (plist-get options :depth)))
-				     (list "--depth" (hare--string depth)))
-				   (when (plist-get options :no-diff-added)
-				     (list "--no-diff-added"))
-				   (when (plist-get options :no-diff-deleted)
-				     (list "--no-diff-deleted"))
-				   (when (plist-get options :ignore-properties)
-				     (list "--ignore-properties"))
-				   (when (plist-get options :properties-only)
-				     (list "--properties-only"))
-				   (when (plist-get options :show-copies-as-adds)
-				     (list "--show-copies-as-adds"))
-				   (when (plist-get options :notice-ancestry)
-				     (list "--notice-ancestry"))
-				   (when (plist-get options :summarize)
-				     (list "--summarize"))
-				   (when (plist-get options :force)
-				     (list "--force"))
-				   (when (plist-get options :git)
-				     (list "--git")))))))
-    (cond ((eq process-buffer output-buffer)
-	   (with-current-buffer process-buffer
-	     (diff-mode)))
-	  (;; Whether or not to display the output buffer.
-	   (and status
-		(with-current-buffer output-buffer
-		  (goto-char (point-min))
-		  (if (save-excursion
-			(skip-chars-forward " \t\n")
-			(eobp))
-		      (ignore (message "No differences")) ;nil
-		    ;; Output buffer is not empty.
-		    (when (hare--paths-p targets)
-		      (setq default-directory (hare--paths-parent targets)))
-		    (setq buffer-read-only t)
-		    (diff-mode)
-		    t)))
-	   (let ((display-buffer-alist `((".*" . ,hare--temp-buffer-action))))
-	     (display-buffer output-buffer)))
-	  (t
-	   (let ((kill-buffer-query-functions ()))
-	     (kill-buffer output-buffer))))
-    status))
+  (if (plist-get options :summarize)
+      ;; Output is similar to an ‘svn status’ command.
+      ;; Thus, treat it like that.
+      (hare--with-process-window (buffer '(svn-status))
+	(apply #'hare--svn buffer 0 targets "diff"
+	       (nconc (list "--summarize")
+		      (when-let ((revision (plist-get options :revision)))
+			(list "--revision" (hare--string revision t)))
+		      (when-let ((change (plist-get options :change)))
+			(list "--change" (hare--string change t)))
+		      (when-let ((depth (plist-get options :depth)))
+			(list "--depth" (hare--string depth)))
+		      (when-let ((extensions (plist-get options :extensions)))
+			(list "--extensions" (hare--string extensions)))
+		      (when (plist-get options :ignore-properties)
+			(list "--ignore-properties"))
+		      (when (plist-get options :properties-only)
+			(list "--properties-only"))
+		      (when (plist-get options :notice-ancestry)
+			(list "--notice-ancestry")))))
+    (let (status process-buffer output-buffer)
+      (setq status (hare--with-process-window (buffer '(svn-diff))
+		     (setq process-buffer buffer
+			   output-buffer buffer)
+		     (let ((dest (cl-etypecase hare-svn-diff-output
+				   (null
+				    ;; Insert output into the process buffer.
+				    (nconc (list buffer :omit-first-line t)
+					   (when (hare--paths-p targets)
+					     (list :default-directory (hare--paths-parent targets)))))
+				   (string
+				    ;; Send output to a separate output buffer.
+				    (let ((tem (get-buffer-create hare-svn-diff-output)))
+				      (setq output-buffer tem)
+				      (with-current-buffer tem
+					(kill-all-local-variables)
+					(setq buffer-read-only nil)
+					(erase-buffer))
+				      (list buffer :output-buffer tem))))))
+		       (apply #'hare--svn dest 0 targets "diff"
+			      (nconc (when-let ((revision (plist-get options :revision)))
+				       (list "--revision" (hare--string revision t)))
+				     (when-let ((change (plist-get options :change)))
+				       (list "--change" (hare--string change t)))
+				     (when-let ((depth (plist-get options :depth)))
+				       (list "--depth" (hare--string depth)))
+				     (when-let ((extensions (plist-get options :extensions)))
+				       (list "--extensions" (hare--string extensions)))
+				     (when (plist-get options :ignore-properties)
+				       (list "--ignore-properties"))
+				     (when (plist-get options :properties-only)
+				       (list "--properties-only"))
+				     (when (plist-get options :no-diff-added)
+				       (list "--no-diff-added"))
+				     (when (plist-get options :no-diff-deleted)
+				       (list "--no-diff-deleted"))
+				     (when (plist-get options :show-copies-as-adds)
+				       (list "--show-copies-as-adds"))
+				     (when (plist-get options :notice-ancestry)
+				       (list "--notice-ancestry"))
+				     (when (plist-get options :force)
+				       (list "--force"))
+				     (cl-ecase (plist-get options :output-format)
+				       ((patch :patch)
+					(list "--patch-compatible"))
+				       ((git :git)
+					(list "--git"))
+				       ((nil)
+					())))))))
+      (cond ((eq process-buffer output-buffer)
+	     (with-current-buffer process-buffer
+	       (diff-mode)))
+	    (;; Whether or not to display the output buffer.
+	     (and status
+		  (with-current-buffer output-buffer
+		    (goto-char (point-min))
+		    (if (save-excursion
+			  (skip-chars-forward " \t\n")
+			  (eobp))
+			(ignore (message "No differences")) ;nil
+		      ;; Output buffer is not empty.
+		      (when (hare--paths-p targets)
+			(setq default-directory (hare--paths-parent targets)))
+		      (setq buffer-read-only t)
+		      (diff-mode)
+		      t)))
+	     (let ((display-buffer-alist `((".*" . ,hare--temp-buffer-action))))
+	       (display-buffer output-buffer))))
+      status)))
 
 (defun hare-svn-diff (&optional _arg)
   "Display local modifications in a working copy."
@@ -2331,12 +2466,163 @@ If the value is a string, divert the output to the buffer of this name."
     (hare--svn-diff paths)
     ()))
 
+(defun hare-svn-diff-revisions (&optional _arg)
+  "Display differences between two revisions."
+  (interactive "P")
+  (let ((paths (hare--svn-collect-paths :vc-state t)))
+    (hare--form (targets depth revision properties whitespace newline added deleted copied ancestry output-format)
+	"Display differences between two revisions."
+	(apply #'hare--svn-diff targets
+	       (nconc (list :depth depth)
+		      (cl-multiple-value-bind (first second third)
+			  (cl-values-list revision)
+			(cond ((and (eq first 'change) second)
+			       (list :change second))
+			      ((and (eq first 'revision) second)
+			       (list :revision (if (null third)
+						   (hare--string second t)
+						 (format "%s:%s" second third))))))
+		      (cl-case properties
+			(ignore
+			 (list :ignore-properties t))
+			(only
+			 (list :properties-only t)))
+		      (when (or whitespace newline)
+			(list :extensions (string-trim (concat whitespace " " (when newline "--ignore-eol-style")))))
+		      (if (eq output-format 'summary)
+			  (list :notice-ancestry ancestry
+				:summarize t)
+ 			(list :no-diff-added added
+			      :no-diff-deleted deleted
+			      :show-copies-as-adds copied
+			      :notice-ancestry ancestry
+			      :output-format output-format))))
+      (setq revision (widget-create 'hare--svn-revision-choice))
+      (insert ?\n)
+      (setq properties (apply #'widget-create 'menu-choice
+			      :value nil
+			      :format "%t %[ Value Menu %]: %v"
+			      :tag "Properties"
+			      :help-echo "Define how to handle changes in properties"
+			      '((const
+				 :value nil
+				 :format "%t\n%h"
+				 :tag "Display"
+				 :doc "\
+Display differences in properties.")
+				(const
+				 :value ignore
+				 :format "%t\n%h"
+				 :tag "Ignore"
+				 :doc "\
+Ignore differences in properties.")
+				(const
+				 :value only
+				 :format "%t\n%h"
+				 :tag "Only"
+				 :doc "\
+Only operate on properties; don't compare file content."))))
+      (insert ?\n)
+      (setq whitespace (apply #'widget-create 'menu-choice
+			      :value nil
+			      :format "%t %[ Value Menu %]: %v"
+			      :tag "Whitespace"
+			      :help-echo "Define how to handle changes in whitespace"
+			      '((const
+				 :value nil
+				 :format "%t\n%h"
+				 :tag "Display"
+				 :doc "\
+Display differences in whitespace.")
+				(const
+				 :value "-b"
+				 :format "%t\n%h"
+				 :tag "Ignore Amount"
+				 :doc "\
+Ignore differences in amount of whitespace.
+If enabled, ignore whitespace at the end of a line and consider all
+other sequences of one or more whitespace characters within a line
+to be equivalent.")
+				(const
+				 :value "-w"
+				 :format "%t\n%h"
+				 :tag "Ignore All"
+				 :doc "\
+Ignore all differences in whitespace.
+If enabled, ignore differences even if one line has whitespace where
+the other line has none."))))
+      (insert ?\n)
+      (setq newline (hare--create-svn-widget 'checkbox
+		      :doc "\
+Ignore differences in end of line style."))
+      (insert ?\n)
+      (setq added (hare--create-svn-widget 'checkbox
+		    :value t
+		    :doc "\
+Don't display differences for added files.
+If this option is enabled, do not display differences for added files.
+Otherwise, an added file is displayed as if you had added all of its
+content to an empty file."))
+      (insert ?\n)
+      (setq deleted (hare--create-svn-widget 'checkbox
+		      :value t
+		      :doc "\
+Don't display differences for deleted files.
+If this option is enabled, do not display differences for deleted files.
+Otherwise, a deleted file is displayed as if you had deleted all of its
+content."))
+      (insert ?\n)
+      (setq copied (hare--create-svn-widget 'checkbox
+		     :doc "\
+Don't compare copied or moved files with their source files.
+If this option is enabled, treat copied or moved files like added
+files.  Otherwise, a copied or moved file is compared against the
+file from which the copy was created."))
+      (insert ?\n)
+      (setq ancestry (hare--create-svn-widget 'checkbox
+		       :doc "\
+Pay attention to ancestry when calculating differences.
+If this option is enabled, treat a file with identical content but
+different ancestry as if it has been deleted and added again.  The
+default behavior is to only compare the file content."))
+      (insert ?\n)
+      (setq output-format (apply #'widget-create 'menu-choice
+				 :value nil
+				 :format "%t %[ Value Menu %]: %v"
+				 :tag "Output Format"
+				 :help-echo "Define the output format"
+				 '((const
+				    :value nil
+				    :format "%t\n%h"
+				    :menu-tag "Standard"
+				    :doc "Standard output format.")
+				   (const
+				    :value patch
+				    :format "%t\n%h"
+				    :menu-tag "Patch"
+				    :doc "Patch compatible output format.")
+				   (const
+				    :value git
+				    :format "%t\n%h"
+				    :menu-tag "Git"
+				    :doc "Git's extended output format.")
+				   (const
+				    :value summary
+				    :format "%t\n%h"
+				    :menu-tag "Summary"
+				    :doc "Display only high-level status changes."))))
+      (insert ?\n)
+      (setq depth (hare--create-svn-widget 'depth :value 'infinity))
+      (hare--form-horizontal-line)
+      (setq targets (widget-create 'hare--paths-widget :value paths))
+      ())))
+
 (defun hare--svn-status (targets &rest options)
   "Run the ‘svn status’ command."
   (hare--with-process-window (buffer '(svn-status))
     (apply #'hare--svn buffer 0 targets "status"
 	   (nconc (when-let ((revision (plist-get options :revision)))
-		    (list "--revision" (hare--string revision)))
+		    (list "--revision" (hare--string revision t)))
 		  (when-let ((depth (plist-get options :depth)))
 		    (list "--depth" (hare--string depth)))
 		  (when (plist-get options :no-ignore)
@@ -2351,12 +2637,12 @@ If the value is a string, divert the output to the buffer of this name."
 		    (list "--verbose"))))))
 
 (defun hare-svn-status (&optional _arg)
-  "Print the status of working copy files and directories."
+  "Display the status of working copy files and directories."
   (interactive "P")
   (let ((paths (hare--svn-collect-paths
 		:vc-state t)))
     (hare--form (targets revision depth no-ignore externals quiet updates verbose)
-	"Print the status of working copy files and directories."
+	"Display the status of working copy files and directories."
 	(hare--svn-status targets
 			  :revision revision
 			  :depth depth
@@ -2365,10 +2651,7 @@ If the value is a string, divert the output to the buffer of this name."
 			  :quiet quiet
 			  :show-updates updates
 			  :verbose verbose)
-      (setq revision (hare--create-svn-widget 'revision))
-      (insert ?\n)
-      (setq depth (hare--create-svn-widget 'depth
-		    :value 'infinity))
+      (setq revision (widget-create 'hare--svn-revision))
       (insert ?\n)
       (setq no-ignore (hare--create-svn-widget 'checkbox
 			:doc "Don't apply ignore rules to implicitly visited items.
@@ -2380,15 +2663,17 @@ enabled, operate on all the files and directories present."))
 			:doc "Ignore external definitions."))
       (insert ?\n)
       (setq quiet (hare--create-svn-widget 'checkbox
-		    :doc "Print only summary information about locally modified items."))
+		    :doc "Display only summary information about locally modified items."))
       (insert ?\n)
       (setq updates (hare--create-svn-widget 'checkbox
-		      :doc "Print working copy revision and server out-of-date information."))
+		      :doc "Display working copy revision and server out-of-date information."))
       (insert ?\n)
       (setq verbose (hare--create-svn-widget 'checkbox
-		      :doc "Print full revision information on every item."))
+		      :doc "Display full revision information on every item."))
+      (insert ?\n)
+      (setq depth (hare--create-svn-widget 'depth :value 'infinity))
       (hare--form-horizontal-line)
-      (setq targets (hare--create-paths-widget paths t))
+      (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
 
 (defun hare--svn-cleanup (targets &rest options)
@@ -2456,7 +2741,7 @@ has crashed while using the working copy, leaving it in an unusable state."
 			:doc "Include external definitions.
 Also operate on externals defined by ‘svn:externals’ properties."))
       (hare--form-horizontal-line)
-      (setq targets (hare--create-paths-widget paths nil))
+      (setq targets (widget-create 'hare--paths-widget :value paths :hare-checked nil))
       ())))
 
 (defconst hare--svn-menu
@@ -2468,7 +2753,10 @@ Also operate on externals defined by ‘svn:externals’ properties."))
       menu-bar-separator)
     (bindings--define-key menu [hare-svn-status]
       '(menu-item "Status..." hare-svn-status
-		  :help "Print the status of working copy files and directories"))
+		  :help "Display the status of working copy files and directories"))
+    (bindings--define-key menu [hare-svn-diff-revisions]
+      '(menu-item "Diff..." hare-svn-diff-revisions
+		  :help "Display differences between two revisions"))
     (bindings--define-key menu [hare-svn-diff]
       '(menu-item "Diff" hare-svn-diff
 		  :help "Display local modifications in a working copy"))
