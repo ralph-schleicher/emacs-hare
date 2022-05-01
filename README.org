@@ -27,7 +27,7 @@ The HareSVN context menu shall provide the following commands.
 - [ ] get lock
 - [ ] release lock
 - [X] --
-- [ ] diff
+- [X] diff
 - [ ] show log
 - [X] check for mod
 - [X] --
