@@ -1958,7 +1958,11 @@ Without any form, value is true."
 Signal an error if not within a working copy.
 
 See ‘hare--collect-paths’ for the meaning of OPTIONS."
-  (apply #'hare--collect-paths :vc-backend 'SVN :vc-root t options))
+  (apply #'hare--collect-paths :vc-backend 'SVN :vc-root t
+	 ;; Keyword argument VC-STATE defaults to t.
+	 (if (memq :vc-state options)
+	     options
+	   (cl-list* :vc-state t options))))
 
 (defun hare--svn (buffer success targets command &rest options)
   "Execute a ‘svn’ command.
@@ -2102,8 +2106,7 @@ Return true if the command succeeds."
 (defun hare-svn-commit (&optional _arg)
   "Send changes from your working copy to the repository."
   (interactive "P")
-  (let ((paths (hare--svn-collect-paths
-		:vc-state t)))
+  (let ((paths (hare--svn-collect-paths)))
     (hare--form (targets message depth no-unlock externals)
 	"Send changes from your working copy to the repository."
 	(hare--svn-commit targets message
@@ -2150,8 +2153,7 @@ Do not commit externals with a fixed revision."))
 (defun hare-svn-update (&optional _arg)
   "Update your working copy."
   (interactive "P")
-  (let ((paths (hare--svn-collect-paths
-		:vc-state t)))
+  (let ((paths (hare--svn-collect-paths)))
     (hare--form (targets revision depth set-depth accept force parents externals)
 	"Update your working copy.
 
@@ -2216,8 +2218,7 @@ too."))
 (defun hare-svn-resolve (&optional _arg)
   "Resolve conflicts on working copy files or directories."
   (interactive "P")
-  (let ((paths (hare--svn-collect-paths
-		:vc-state t)))
+  (let ((paths (hare--svn-collect-paths)))
     (hare--form (targets depth accept)
 	"Resolve conflicts on working copy files or directories."
 	(hare--svn-resolve targets
@@ -2462,14 +2463,14 @@ If the value is a string, divert the output to the buffer of this name."
 (defun hare-svn-diff (&optional _arg)
   "Display local modifications in a working copy."
   (interactive "P")
-  (let ((paths (hare--svn-collect-paths :vc-state t)))
+  (let ((paths (hare--svn-collect-paths)))
     (hare--svn-diff paths)
     ()))
 
 (defun hare-svn-diff-revisions (&optional _arg)
   "Display differences between two revisions."
   (interactive "P")
-  (let ((paths (hare--svn-collect-paths :vc-state t)))
+  (let ((paths (hare--svn-collect-paths)))
     (hare--form (targets depth revision properties whitespace newline added deleted copied ancestry output-format)
 	"Display differences between two revisions."
 	(apply #'hare--svn-diff targets
@@ -2639,8 +2640,7 @@ default behavior is to only compare the file content."))
 (defun hare-svn-status (&optional _arg)
   "Display the status of working copy files and directories."
   (interactive "P")
-  (let ((paths (hare--svn-collect-paths
-		:vc-state t)))
+  (let ((paths (hare--svn-collect-paths)))
     (hare--form (targets revision depth no-ignore externals quiet updates verbose)
 	"Display the status of working copy files and directories."
 	(hare--svn-status targets
