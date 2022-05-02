@@ -1,4 +1,4 @@
-## GNUmakefile --- make file for Hare
+## GNUmakefile --- make file for HareSVN
 
 # Copyright (C) 2022 Ralph Schleicher
 
