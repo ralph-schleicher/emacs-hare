@@ -1463,7 +1463,7 @@ Return nil if no fileset can be determined."
   (widget-value (widget-get widget :hare-text)))
 
 (defconst hare--date-regexp
-  (rx-let ((year (or (= 4 (char "0-9")) (and (char "1-9") (>= 4 (char "0-9")))))
+  (rx-let ((year (or (and ?0 (= 3 (char "0-9"))) (and (char "1-9") (>= 3 (char "0-9")))))
            (month (or (and ?0 (char "0-9")) (and ?1 (char "0-2"))))
            (day (or (and (char "0-2") (char "0-9")) (and ?3 (char "0-1"))))
            (hour (or (and (char "0-1") (char "0-9")) (and ?2 (char "0-3"))))
