@@ -1931,7 +1931,10 @@ Without any form, value is true."
   `(not (cl-some #'null (list ,@forms))))
 
 (defun hare--string (object &optional numeric)
-  "Return a string described by OBJECT."
+  "Return a string described by OBJECT.
+
+Emacs has no distinct type for characters.  If optional second argument
+NUMERIC is non-nil, treat a character as a numeric type."
   (cl-typecase object
     (string
      object)
