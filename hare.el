@@ -1976,7 +1976,7 @@ Third argument TARGETS are the targets for the Subversion command.
 Fourth argument COMMAND is the Subversion command to be executed.
 Remaining arguments OPTIONS are any additional command line options.
 
-Return true if the command succeeds."
+Return non-nil if the command succeeds."
   (unless (listp vc-svn-global-switches)
     (error "User option ‘vc-svn-global-switches’ is not a list, please fix it"))
   (let ((came-from (current-buffer))
@@ -2085,27 +2085,33 @@ Return true if the command succeeds."
     status))
 
 (defun hare--svn-commit (targets message &rest options)
-  "Run the ‘svn commit’ command."
+  "Run the ‘svn commit’ command.
+
+First argument TARGETS are the targets of the command.  Value is
+ either a list of file names or a HareSVN paths structure.
+Second argument MESSAGE is the mandatory log message.
+Remaining arguments OPTIONS are keyword arguments.
+
+Return non-nil if the command succeeds."
   (hare--with-log-message-file (file message)
     (hare--with-process-window (buffer '(svn-commit))
       (apply #'hare--svn buffer 0 targets "commit"
-	     (nconc (when-let ((targets (plist-get options :targets)))
-		      (list "--targets" (hare--string targets)))
-		    (when-let ((depth (plist-get options :depth)))
-		      (list "--depth" (hare--string depth)))
+	     (nconc (list "--file" file "--force-log")
+		    (when (plist-get options :quiet)
+		      (list "--quiet"))
 		    (when (plist-get options :no-unlock)
 		      (list "--no-unlock"))
 		    (when (plist-get options :include-externals)
 		      (list "--include-externals"))
-		    (when (plist-get options :quiet)
-		      (list "--quiet"))
-		    (list "--file" file "--force-log"))))))
+		    (when-let ((depth (plist-get options :depth)))
+		      (list "--depth" (hare--string depth)))
+		    ())))))
 
-(defun hare-svn-commit (&optional _arg)
+(defun hare-svn-commit ()
   "Send changes from your working copy to the repository."
-  (interactive "P")
+  (interactive)
   (let ((paths (hare--svn-collect-paths)))
-    (hare--form (targets message depth no-unlock externals)
+    (hare--form (message targets depth no-unlock externals)
 	"Send changes from your working copy to the repository."
 	(hare--svn-commit targets message
 			  :depth depth
@@ -2118,7 +2124,7 @@ The default is to unlock any locked target after a successful commit."))
       (setq externals (hare--create-svn-widget 'checkbox
 			:doc "Include external definitions.
 Also operate on externals defined by ‘svn:externals’ properties.
-Do not commit externals with a fixed revision."))
+Don't commit externals with a fixed revision."))
       (insert ?\n)
       (setq depth (hare--create-svn-widget 'depth :value 'empty))
       (hare--form-horizontal-line)
@@ -2128,15 +2134,19 @@ Do not commit externals with a fixed revision."))
       ())))
 
 (defun hare--svn-update (targets &rest options)
-  "Run the ‘svn update’ command."
+  "Run the ‘svn update’ command.
+
+First argument TARGETS are the targets of the command.  Value is
+ either a list of file names or a HareSVN paths structure.
+Remaining arguments OPTIONS are keyword arguments.
+
+Return non-nil if the command succeeds."
   (hare--with-process-window (buffer '(svn-update))
     (apply #'hare--svn buffer 0 targets "update"
-	   (nconc (when-let ((revision (plist-get options :revision)))
+	   (nconc (when (plist-get options :quiet)
+		    (list "--quiet"))
+		  (when-let ((revision (plist-get options :revision)))
 		    (list "--revision" (hare--string revision t)))
-		  (when-let ((depth (plist-get options :depth)))
-		    (list "--depth" (hare--string depth)))
-		  (when-let ((set-depth (plist-get options :set-depth)))
-		    (list "--set-depth" (hare--string set-depth)))
 		  (when-let ((accept (plist-get options :accept)))
 		    (list "--accept" (hare--string accept)))
 		  (when (plist-get options :force)
@@ -2145,30 +2155,31 @@ Do not commit externals with a fixed revision."))
 		    (list "--parents"))
 		  (when (plist-get options :ignore-externals)
 		    (list "--ignore-externals"))
-		  (when (plist-get options :quiet)
-		    (list "--quiet"))))))
+		  (when-let ((set-depth (plist-get options :set-depth)))
+		    (list "--set-depth" (hare--string set-depth)))
+		  (when-let ((depth (plist-get options :depth)))
+		    (list "--depth" (hare--string depth)))
+		  ()))))
 
-(defun hare-svn-update (&optional _arg)
+(defun hare-svn-update ()
   "Update your working copy."
-  (interactive "P")
+  (interactive)
   (let ((paths (hare--svn-collect-paths)))
-    (hare--form (targets revision depth set-depth accept force parents externals)
+    (hare--form (targets depth set-depth revision accept force parents externals)
 	"Update your working copy.
 
 Synchronize the working copy to the given revision.  If no revision is
 specified, synchronize the working copy to the latest revision in the
 repository."
 	(hare--svn-update targets
-			  :revision revision
 			  :depth depth
 			  :set-depth set-depth
+			  :revision revision
 			  :accept accept
 			  :force force
 			  :parents parents
 			  :ignore-externals externals)
       (setq revision (widget-create 'hare--svn-revision))
-      (insert ?\n)
-      (setq set-depth (hare--create-svn-widget 'set-depth))
       (insert ?\n)
       (setq accept (hare--create-svn-widget 'accept))
       (insert ?\n)
@@ -2182,7 +2193,8 @@ the working copy.  This means that an obstructing directory's unversioned
 children may also obstruct and become versioned.  For files, any content
 differences between the obstruction and the repository are treated like
 a local modification to the working copy.  All properties from the
-repository are applied to the obstructing path."))
+repository are applied to the obstructing path."
+		    :value t))
       (insert ?\n)
       (setq parents (hare--create-svn-widget 'checkbox
 		      :doc "Create intermediate directories.
@@ -2190,10 +2202,14 @@ If a target is missing in the working copy but its immediate parent
 directory is present, checkout the target into its parent directory
 at the specified depth.  If this option is enabled, create any missing
 parent directories of the target by checking them out at depth ‘empty’,
-too."))
+too."
+		      :value t))
       (insert ?\n)
       (setq externals (hare--create-svn-widget 'checkbox
-			:doc "Ignore external definitions."))
+			:doc "Ignore external definitions.
+Don't operate on externals defined by ‘svn:externals’ properties."))
+      (insert ?\n)
+      (setq set-depth (hare--create-svn-widget 'set-depth))
       (insert ?\n)
       (setq depth (hare--create-svn-widget 'depth))
       (hare--form-horizontal-line)
@@ -2201,21 +2217,26 @@ too."))
       ())))
 
 (defun hare--svn-resolve (targets &rest options)
-  "Run the ‘svn resolve’ command."
+  "Run the ‘svn resolve’ command.
+
+First argument TARGETS are the targets of the command.  Value is
+ either a list of file names or a HareSVN paths structure.
+Remaining arguments OPTIONS are keyword arguments.
+
+Return non-nil if the command succeeds."
   (hare--with-process-window (buffer '(svn-resolve))
     (apply #'hare--svn buffer 0 targets "resolve"
-	   (nconc (when-let ((targets (plist-get options :targets)))
-		    (list "--targets" (hare--string targets)))
-		  (when-let ((depth (plist-get options :depth)))
-		    (list "--depth" (hare--string depth)))
+	   (nconc (when (plist-get options :quiet)
+		    (list "--quiet"))
 		  (when-let ((accept (plist-get options :accept)))
 		    (list "--accept" (hare--string accept)))
-		  (when (plist-get options :quiet)
-		    (list "--quiet"))))))
+		  (when-let ((depth (plist-get options :depth)))
+		    (list "--depth" (hare--string depth)))
+		  ()))))
 
-(defun hare-svn-resolve (&optional _arg)
+(defun hare-svn-resolve ()
   "Resolve conflicts on working copy files or directories."
-  (interactive "P")
+  (interactive)
   (let ((paths (hare--svn-collect-paths)))
     (hare--form (targets depth accept)
 	"Resolve conflicts on working copy files or directories."
@@ -2231,13 +2252,17 @@ too."))
       ())))
 
 (defun hare--svn-add (targets &rest options)
-  "Run the ‘svn add’ command."
+  "Run the ‘svn add’ command.
+
+First argument TARGETS are the targets of the command.  Value is
+ either a list of file names or a HareSVN paths structure.
+Remaining arguments OPTIONS are keyword arguments.
+
+Return non-nil if the command succeeds."
   (hare--with-process-window (buffer '(svn-add))
     (apply #'hare--svn buffer 0 targets "add"
-	   (nconc (when-let ((targets (plist-get options :targets)))
-		    (list "--targets" (hare--string targets)))
-		  (when-let ((depth (plist-get options :depth)))
-		    (list "--depth" (hare--string depth)))
+	   (nconc (when (plist-get options :quiet)
+		    (list "--quiet"))
 		  (when (plist-get options :no-ignore)
 		    (list "--no-ignore"))
 		  (when (plist-get options :auto-props)
@@ -2248,16 +2273,17 @@ too."))
 		    (list "--force"))
 		  (when (plist-get options :parents)
 		    (list "--parents"))
-		  (when (plist-get options :quiet)
-		    (list "--quiet"))))))
+		  (when-let ((depth (plist-get options :depth)))
+		    (list "--depth" (hare--string depth)))
+		  ()))))
 
-(defun hare-svn-add (&optional _arg)
+(defun hare-svn-add ()
   "Put files and directories under version control."
-  (interactive "P")
+  (interactive)
   (let ((paths (hare--svn-collect-paths
 		:vc-state '(unregistered nil)
 		:parent-items t)))
-    (hare--form (targets depth force no-ignore auto-props parents)
+    (hare--form (targets depth no-ignore auto-props force parents)
 	"Put files and directories under version control."
 	(hare--svn-add targets
 		       :depth depth
@@ -2275,41 +2301,47 @@ enabled, operate on all the files and directories present."))
       (setq auto-props (hare--create-svn-widget 'auto-props))
       (insert ?\n)
       (setq force (hare--create-svn-widget 'checkbox
-		    :value t
 		    :doc "Ignore already versioned paths.
 If this option is enabled, add all the unversioned paths and ignore
-the rest.  Otherwise, error out if a path is already versioned."))
+the rest.  Otherwise, error out if a path is already versioned."
+		    :value t))
       (insert ?\n)
       (setq parents (hare--create-svn-widget 'checkbox
-		      :value t
 		      :doc "Add intermediate directories.
 If this option is enabled, add any missing parent directories of the
-target at depth ‘empty’, too."))
+target at depth ‘empty’, too."
+		      :value t))
       (insert ?\n)
       (setq depth (hare--create-svn-widget 'depth :value 'empty))
       (hare--form-horizontal-line)
       (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
 
-(defun hare--svn-delete (targets message &rest options)
-  "Run the ‘svn delete’ command."
-  (hare--with-log-message-file (file message)
-    (hare--with-process-window (buffer '(svn-delete))
-      (apply #'hare--svn buffer 0 targets "delete"
-	     (nconc (when-let ((targets (plist-get options :targets)))
-		      (list "--targets" (hare--string targets)))
-		    (when (plist-get options :force)
-		      (list "--force"))
-		    (when (plist-get options :keep-local)
-		      (list "--keep-local"))
-		    (when (plist-get options :quiet)
-		      (list "--quiet"))
-		    (when (not (null message))
-		      (list "--file" file "--force-log")))))))
+(defun hare--svn-delete (targets &rest options)
+  "Run the ‘svn delete’ command.
 
-(defun hare-svn-delete (&optional _arg)
+First argument TARGETS are the targets of the command.  Value is
+ either a list of file names or a HareSVN paths structure.
+Remaining arguments OPTIONS are keyword arguments.
+
+Return non-nil if the command succeeds."
+  (let ((message (plist-get options :message)))
+    (hare--with-log-message-file (file message)
+      (hare--with-process-window (buffer '(svn-delete))
+	(apply #'hare--svn buffer 0 targets "delete"
+	       (nconc (when (not (null message))
+			(list "--file" file "--force-log"))
+		      (when (plist-get options :quiet)
+			(list "--quiet"))
+		      (when (plist-get options :force)
+			(list "--force"))
+		      (when (plist-get options :keep-local)
+			(list "--keep-local"))
+		      ()))))))
+
+(defun hare-svn-delete ()
   "Remove files and directories from version control."
-  (interactive "P")
+  (interactive)
   (let ((paths (hare--svn-collect-paths
 		:vc-state '(not removed unregistered nil)
 		:parent-items t)))
@@ -2318,31 +2350,36 @@ target at depth ‘empty’, too."))
 
 Files and directories are only scheduled for removal.
 The actual removal occurs upon the next commit."
-	(hare--svn-delete targets nil
+	(hare--svn-delete targets
 			  :force force
 			  :keep-local t) ;schedule for removal
       (setq force (hare--create-svn-widget 'checkbox
 		    :doc "Remove modified files and directories.
-If this option is enabled, files and directories are removed regardless of
-their version control state.  Otherwise, modified items are not removed."))
+If enabled, files and directories are removed regardless of their
+version control state.  Otherwise, modified items are not removed."))
       (hare--form-horizontal-line)
       (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
 
 (defun hare--svn-revert (targets &rest options)
-  "Run the ‘svn revert’ command."
+  "Run the ‘svn revert’ command.
+
+First argument TARGETS are the targets of the command.  Value is
+ either a list of file names or a HareSVN paths structure.
+Remaining arguments OPTIONS are keyword arguments.
+
+Return non-nil if the command succeeds."
   (hare--with-process-window (buffer '(svn-revert))
     (apply #'hare--svn buffer 0 targets "revert"
-	   (nconc (when-let ((targets (plist-get options :targets)))
-		    (list "--targets" (hare--string targets)))
+	   (nconc (when (plist-get options :quiet)
+		    (list "--quiet"))
 		  (when-let ((depth (plist-get options :depth)))
 		    (list "--depth" (hare--string depth)))
-		  (when (plist-get options :quiet)
-		    (list "--quiet"))))))
+		  ()))))
 
-(defun hare-svn-revert (&optional _arg)
+(defun hare-svn-revert ()
   "Undo local modifications."
-  (interactive "P")
+  (interactive)
   (let ((paths (hare--svn-collect-paths
 		:vc-state '(not up-to-date unregistered nil)
 		:parent-items t)))
@@ -2367,7 +2404,13 @@ If the value is a string, divert the output to the buffer of this name."
   :group 'hare)
 
 (defun hare--svn-diff (targets &rest options)
-  "Run the ‘svn diff’ command."
+  "Run the ‘svn diff’ command.
+
+First argument TARGETS are the targets of the command.  Value is
+ either a list of file names or a HareSVN paths structure.
+Remaining arguments OPTIONS are keyword arguments.
+
+Return non-nil if the command succeeds."
   (if (plist-get options :summarize)
       ;; Output is similar to an ‘svn status’ command.
       ;; Thus, treat it like that.
@@ -2378,8 +2421,6 @@ If the value is a string, divert the output to the buffer of this name."
 			(list "--revision" (hare--string revision t)))
 		      (when-let ((change (plist-get options :change)))
 			(list "--change" (hare--string change t)))
-		      (when-let ((depth (plist-get options :depth)))
-			(list "--depth" (hare--string depth)))
 		      (when-let ((extensions (plist-get options :extensions)))
 			(list "--extensions" (hare--string extensions)))
 		      (when (plist-get options :ignore-properties)
@@ -2387,7 +2428,10 @@ If the value is a string, divert the output to the buffer of this name."
 		      (when (plist-get options :properties-only)
 			(list "--properties-only"))
 		      (when (plist-get options :notice-ancestry)
-			(list "--notice-ancestry")))))
+			(list "--notice-ancestry"))
+		      (when-let ((depth (plist-get options :depth)))
+			(list "--depth" (hare--string depth)))
+		      ())))
     (let (status process-buffer output-buffer)
       (setq status (hare--with-process-window (buffer '(svn-diff))
 		     (setq process-buffer buffer
@@ -2412,8 +2456,6 @@ If the value is a string, divert the output to the buffer of this name."
 				       (list "--revision" (hare--string revision t)))
 				     (when-let ((change (plist-get options :change)))
 				       (list "--change" (hare--string change t)))
-				     (when-let ((depth (plist-get options :depth)))
-				       (list "--depth" (hare--string depth)))
 				     (when-let ((extensions (plist-get options :extensions)))
 				       (list "--extensions" (hare--string extensions)))
 				     (when (plist-get options :ignore-properties)
@@ -2436,7 +2478,10 @@ If the value is a string, divert the output to the buffer of this name."
 				       ((git :git)
 					(list "--git"))
 				       ((nil)
-					())))))))
+					()))
+				     (when-let ((depth (plist-get options :depth)))
+				       (list "--depth" (hare--string depth)))
+				     ())))))
       (cond ((eq process-buffer output-buffer)
 	     (with-current-buffer process-buffer
 	       (diff-mode)))
@@ -2458,16 +2503,16 @@ If the value is a string, divert the output to the buffer of this name."
 	       (display-buffer output-buffer))))
       status)))
 
-(defun hare-svn-diff (&optional _arg)
+(defun hare-svn-diff ()
   "Display local modifications in a working copy."
-  (interactive "P")
+  (interactive)
   (let ((paths (hare--svn-collect-paths)))
     (hare--svn-diff paths)
     ()))
 
-(defun hare-svn-diff-revisions (&optional _arg)
+(defun hare-svn-diff-revisions ()
   "Display differences between two revisions."
-  (interactive "P")
+  (interactive)
   (let ((paths (hare--svn-collect-paths)))
     (hare--form (targets depth revision properties whitespace newline added deleted copied ancestry output-format)
 	"Display differences between two revisions."
@@ -2495,7 +2540,8 @@ If the value is a string, divert the output to the buffer of this name."
 			      :no-diff-deleted deleted
 			      :show-copies-as-adds copied
 			      :notice-ancestry ancestry
-			      :output-format output-format))))
+			      :output-format output-format))
+		      ()))
       (setq revision (widget-create 'hare--svn-revision-choice))
       (insert ?\n)
       (setq properties (apply #'widget-create 'menu-choice
@@ -2507,20 +2553,17 @@ If the value is a string, divert the output to the buffer of this name."
 				 :value nil
 				 :format "%t\n%h"
 				 :tag "Display"
-				 :doc "\
-Display differences in properties.")
+				 :doc "Display differences in properties.")
 				(const
 				 :value ignore
 				 :format "%t\n%h"
 				 :tag "Ignore"
-				 :doc "\
-Ignore differences in properties.")
+				 :doc "Ignore differences in properties.")
 				(const
 				 :value only
 				 :format "%t\n%h"
 				 :tag "Only"
-				 :doc "\
-Only operate on properties; don't compare file content."))))
+				 :doc "Only operate on properties; don't compare file content."))))
       (insert ?\n)
       (setq whitespace (apply #'widget-create 'menu-choice
 			      :value nil
@@ -2531,14 +2574,12 @@ Only operate on properties; don't compare file content."))))
 				 :value nil
 				 :format "%t\n%h"
 				 :tag "Display"
-				 :doc "\
-Display differences in whitespace.")
+				 :doc "Display differences in whitespace.")
 				(const
 				 :value "-b"
 				 :format "%t\n%h"
 				 :tag "Ignore Amount"
-				 :doc "\
-Ignore differences in amount of whitespace.
+				 :doc "Ignore differences in amount of whitespace.
 If enabled, ignore whitespace at the end of a line and consider all
 other sequences of one or more whitespace characters within a line
 to be equivalent.")
@@ -2546,44 +2587,37 @@ to be equivalent.")
 				 :value "-w"
 				 :format "%t\n%h"
 				 :tag "Ignore All"
-				 :doc "\
-Ignore all differences in whitespace.
+				 :doc "Ignore all differences in whitespace.
 If enabled, ignore differences even if one line has whitespace where
 the other line has none."))))
       (insert ?\n)
       (setq newline (hare--create-svn-widget 'checkbox
-		      :doc "\
-Ignore differences in end of line style."))
+		      :doc "Ignore differences in end of line style."))
       (insert ?\n)
       (setq added (hare--create-svn-widget 'checkbox
-		    :value t
-		    :doc "\
-Don't display differences for added files.
-If this option is enabled, do not display differences for added files.
-Otherwise, an added file is displayed as if you had added all of its
-content to an empty file."))
+		    :doc "Don't display differences for added files.
+If enabled, do not display differences for added files.  Otherwise,
+an added file is displayed as if you had added all of its content
+to an empty file."
+		    :value t))
       (insert ?\n)
       (setq deleted (hare--create-svn-widget 'checkbox
-		      :value t
-		      :doc "\
-Don't display differences for deleted files.
-If this option is enabled, do not display differences for deleted files.
-Otherwise, a deleted file is displayed as if you had deleted all of its
-content."))
+		      :doc "Don't display differences for deleted files.
+If enabled, do not display differences for deleted files.  Otherwise,
+a deleted file is displayed as if you had deleted all of its content."
+		      :value t))
       (insert ?\n)
       (setq copied (hare--create-svn-widget 'checkbox
-		     :doc "\
-Don't compare copied or moved files with their source files.
-If this option is enabled, treat copied or moved files like added
-files.  Otherwise, a copied or moved file is compared against the
-file from which the copy was created."))
+		     :doc "Don't compare copied or moved files with their source files.
+If enabled, treat copied or moved files like added files.  Otherwise,
+a copied or moved file is compared against the file from which the
+copy was created."))
       (insert ?\n)
       (setq ancestry (hare--create-svn-widget 'checkbox
-		       :doc "\
-Pay attention to ancestry when calculating differences.
-If this option is enabled, treat a file with identical content but
-different ancestry as if it has been deleted and added again.  The
-default behavior is to only compare the file content."))
+		       :doc "Pay attention to ancestry when calculating differences.
+If enabled, treat a file with identical content but different ancestry
+as if it has been deleted and added again.  The default behavior is to
+only compare the file content."))
       (insert ?\n)
       (setq output-format (apply #'widget-create 'menu-choice
 				 :value nil
@@ -2617,13 +2651,17 @@ default behavior is to only compare the file content."))
       ())))
 
 (defun hare--svn-status (targets &rest options)
-  "Run the ‘svn status’ command."
+  "Run the ‘svn status’ command.
+
+First argument TARGETS are the targets of the command.  Value is
+ either a list of file names or a HareSVN paths structure.
+Remaining arguments OPTIONS are keyword arguments.
+
+Return non-nil if the command succeeds."
   (hare--with-process-window (buffer '(svn-status))
     (apply #'hare--svn buffer 0 targets "status"
 	   (nconc (when-let ((revision (plist-get options :revision)))
 		    (list "--revision" (hare--string revision t)))
-		  (when-let ((depth (plist-get options :depth)))
-		    (list "--depth" (hare--string depth)))
 		  (when (plist-get options :no-ignore)
 		    (list "--no-ignore"))
 		  (when (plist-get options :ignore-externals)
@@ -2633,32 +2671,26 @@ default behavior is to only compare the file content."))
 		  (when (plist-get options :show-updates)
 		    (list "--show-updates"))
 		  (when (plist-get options :verbose)
-		    (list "--verbose"))))))
+		    (list "--verbose"))
+		  (when-let ((depth (plist-get options :depth)))
+		    (list "--depth" (hare--string depth)))
+		  ()))))
 
-(defun hare-svn-status (&optional _arg)
+(defun hare-svn-status ()
   "Display the status of working copy files and directories."
-  (interactive "P")
+  (interactive)
   (let ((paths (hare--svn-collect-paths)))
-    (hare--form (targets revision depth no-ignore externals quiet updates verbose)
+    (hare--form (targets depth revision quiet updates verbose no-ignore externals)
 	"Display the status of working copy files and directories."
 	(hare--svn-status targets
-			  :revision revision
 			  :depth depth
-			  :no-ignore no-ignore
-			  :ignore-externals externals
+			  :revision revision
 			  :quiet quiet
 			  :show-updates updates
-			  :verbose verbose)
+			  :verbose verbose
+			  :no-ignore no-ignore
+			  :ignore-externals externals)
       (setq revision (widget-create 'hare--svn-revision))
-      (insert ?\n)
-      (setq no-ignore (hare--create-svn-widget 'checkbox
-			:doc "Don't apply ignore rules to implicitly visited items.
-Subversion uses ignore patterns to determine which items should be
-skipped as part of a larger recursive operation.  If this option is
-enabled, operate on all the files and directories present."))
-      (insert ?\n)
-      (setq externals (hare--create-svn-widget 'checkbox
-			:doc "Ignore external definitions."))
       (insert ?\n)
       (setq quiet (hare--create-svn-widget 'checkbox
 		    :doc "Display only summary information about locally modified items."))
@@ -2669,13 +2701,29 @@ enabled, operate on all the files and directories present."))
       (setq verbose (hare--create-svn-widget 'checkbox
 		      :doc "Display full revision information on every item."))
       (insert ?\n)
+      (setq no-ignore (hare--create-svn-widget 'checkbox
+			:doc "Don't apply ignore rules to implicitly visited items.
+Subversion uses ignore patterns to determine which items should be
+skipped as part of a larger recursive operation.  If this option is
+enabled, operate on all the files and directories present."))
+      (insert ?\n)
+      (setq externals (hare--create-svn-widget 'checkbox
+			:doc "Ignore external definitions.
+Don't operate on externals defined by ‘svn:externals’ properties."))
+      (insert ?\n)
       (setq depth (hare--create-svn-widget 'depth :value 'infinity))
       (hare--form-horizontal-line)
       (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
 
 (defun hare--svn-cleanup (targets &rest options)
-  "Run the ‘svn cleanup’ command."
+  "Run the ‘svn cleanup’ command.
+
+First argument TARGETS are the targets of the command.  Value is
+ either a list of file names or a HareSVN paths structure.
+Remaining arguments OPTIONS are keyword arguments.
+
+Return non-nil if the command succeeds."
   (let ((remove-unversioned
 	 (when (plist-get options :remove-unversioned)
 	   "--remove-unversioned"))
@@ -2694,7 +2742,7 @@ enabled, operate on all the files and directories present."))
     (hare--with-process-window (buffer '(svn-cleanup))
       (hare--all-null
        ;; The actual clean up command.
-       (when (plist-get options :cleanup)
+       (unless (plist-get options :no-cleanup)
 	 (not (apply #'hare--svn buffer 0 targets "cleanup"
 		     (delq nil (list include-externals
 				     quiet)))))
@@ -2705,18 +2753,17 @@ enabled, operate on all the files and directories present."))
 				     remove-ignored
 				     vacuum-pristines
 				     include-externals
-				     quiet)))))))
-    ()))
+				     quiet)))))))))
 
-(defun hare-svn-cleanup (&optional _arg)
+(defun hare-svn-cleanup ()
   "Recursively clean up the working copy."
-  (interactive "P")
+  (interactive)
   (let ((paths (hare--svn-collect-paths
 		:collect-parent t)))
     (hare--form (targets cleanup unversioned ignored vacuum externals)
 	"Recursively clean up the working copy."
 	(hare--svn-cleanup targets
-			   :cleanup cleanup
+			   :no-cleanup (not cleanup)
 			   :remove-unversioned unversioned
 			   :remove-ignored ignored
 			   :vacuum-pristines vacuum
@@ -2730,8 +2777,10 @@ has crashed while using the working copy, leaving it in an unusable state."
       (insert ?\n)
       (setq unversioned (hare--create-svn-widget 'checkbox
 			  :doc "Remove unversioned files and directories."))
+      (insert ?\n)
       (setq ignored (hare--create-svn-widget 'checkbox
 		      :doc "Remove ignored files and directories."))
+      (insert ?\n)
       (setq vacuum (hare--create-svn-widget 'checkbox
 		     :doc "Remove unreferenced original files from ‘.svn’ directory."))
       (insert ?\n)
