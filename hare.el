@@ -813,31 +813,59 @@ itself is empty."
 	   '(hare--temp-buffer-undertaker))
       (current-buffer))))
 
-(defun hare--widget-value (widget)
-  "Like ‘widget-value’ but return nil if WIDGET is not a widget."
-  (when (widgetp widget)
-    (widget-value widget)))
-
-(defvar hare--form-horizontal-line (make-string 72 ?─)
-  "Horizontal line object.
-
-Candidates for horizontal line characters are ‘─’ (U+2500, box drawings
-light horizontal) and ‘━’ (U+2501, box drawings heavy horizontal).")
-
-(defun hare--form-horizontal-line ()
-  "Insert a horizontal line."
-  (cond ((stringp hare--form-horizontal-line)
-	 (insert hare--form-horizontal-line ?\n))
-	((characterp hare--form-horizontal-line)
-	 (insert (make-string (- (window-text-width) 2) hare--form-horizontal-line) ?\n))))
-
 (defvar hare--form-special '(default-directory)
-  "List of special variables for form buffers.")
-(defvar hare--form-special-symbols)
-(defvar hare--form-special-values)
+  "List of special variables.
+See the ‘hare--form’ macro for more details.")
 
-;; List of widget names, i.e. symbols binding a widget.
-(defvar hare--form-widget-names)
+(defvar-local hare--form-special-symbols ()
+  "List of ‘hare--form-special’ symbols.")
+
+(defvar-local hare--form-special-values ()
+  "List of ‘hare--form-special’ symbol values.")
+
+(defvar-local hare--form-widget-names ()
+  "List of widget names, i.e. symbols binding a widget.
+See the ‘hare--form’ macro for more details.")
+
+(defvar-local hare--form-cancel-button nil
+  "The cancel push button.")
+
+(defvar-local hare--form-submit-button nil
+  "The submit push button.")
+
+(defun hare-cancel-form ()
+  "Cancel the HareSVN form."
+  (interactive)
+  (when (widgetp hare--form-cancel-button)
+    (widget-item-action hare--form-cancel-button)))
+
+(defun hare-submit-form ()
+  "Submit the HareSVN form."
+  (interactive)
+  (when (widgetp hare--form-submit-button)
+    (widget-item-action hare--form-submit-button)))
+
+(defvar hare-form-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map widget-keymap)
+    (define-key map (kbd "C-c C-q") 'hare-cancel-form)
+    (define-key map (kbd "C-c q") 'hare-cancel-form)
+    (define-key map (kbd "C-c C-c") 'hare-submit-form)
+    (define-key map (kbd "C-c c") 'hare-submit-form)
+    map)
+  "Keymap for HareSVN form buffers.
+The parent of this keymap is ‘widget-keymap’ so that the user can tab
+through the widgets of the form.")
+
+;;;###autoload
+(define-derived-mode hare-form-mode special-mode "HareSVN-Form"
+  "Major mode for HareSVN form buffers."
+  :group 'hare
+  :syntax-table nil
+  :abbrev-table nil
+  :interactive nil
+  ;; Use the widget style of the customization engine.
+  (custom--initialize-widget-variables))
 
 (defmacro hare--form (widget-names documentation submit-form &rest body)
   "A simple form, i.e. dialog box, framework.
@@ -857,10 +885,6 @@ initialized as follows.
      and initialized with nil.  These variables can be bound to widgets
      in the body of the form.  The values of these widgets are then
      available in the submit button call-back form.
-
-   * A local keymap is installed in the form buffer.  The parent of
-     this keymap is ‘widget-keymap’ so that the user can tab through
-     the widgets of the form.
 
    * The documentation string is inserted at the beginning of the form
      buffer.
@@ -883,24 +907,20 @@ initialized as follows.
 	    (,buffer (window-buffer ,window)))
        (select-window ,window)
        (set-buffer ,buffer)
+       ;; Set major mode.
+       (hare-form-mode)
        ;; Forms are editable.
        (setq buffer-read-only nil)
-       ;; Use the widget style of the customization engine.
-       (custom--initialize-widget-variables)
        ;; Propagate the special variables.
-       (set (make-local-variable 'hare--form-special-symbols) hare--form-special)
-       (set (make-local-variable 'hare--form-special-values) ,values)
+       (setq hare--form-special-symbols (copy-sequence hare--form-special))
+       (setq hare--form-special-values ,values)
        (cl-mapc (lambda (symbol value)
 		  (set (make-local-variable symbol) value))
 		hare--form-special-symbols hare--form-special-values)
        ;; Bind the variables for the widget names.
-       (set (make-local-variable 'hare--form-widget-names) ',widget-names)
+       (setq hare--form-widget-names ',widget-names)
        (dolist (widget-name hare--form-widget-names)
 	 (set (make-local-variable widget-name) nil))
-       ;; Prepare the local keymap.
-       (let ((map (make-sparse-keymap)))
-	 (set-keymap-parent map widget-keymap)
-	 (use-local-map map))
        ;; Prepare the form.
        (let ((inhibit-modification-hooks t))
 	 ;; Insert the documentation string.
@@ -908,20 +928,10 @@ initialized as follows.
 	 ;; Insert the cancel and submit buttons.  There is an empty
 	 ;; line before and after these buttons.
 	 (insert ?\s)
-	 (let* ((button (hare--form-quit-button " Cancel "))
-       		(fire (lambda ()
-       			(interactive)
-       			(widget-item-action button))))
-           (local-set-key (kbd "C-c C-q") fire)
-           (local-set-key (kbd "C-c q") fire))
+	 (setq hare--form-cancel-button (hare--form-quit-button " Cancel "))
 	 (insert ?\s ?\s)
-	 (let* ((button (hare--form-quit-button "   OK   "
-       			  ,@(when submit-form (list submit-form))))
-       		(fire (lambda ()
-       			(interactive)
-       			(widget-item-action button))))
-           (local-set-key (kbd "C-c C-c") fire)
-           (local-set-key (kbd "C-c c") fire))
+	 (setq hare--form-submit-button (hare--form-quit-button "   OK   "
+       					  ,@(when submit-form (list submit-form))))
 	 (insert ?\n ?\n)
 	 (hare--form-horizontal-line)
 	 ;; The body form.
@@ -937,6 +947,11 @@ initialized as follows.
        (goto-char (point-min))
        (widget-move 2)
        ())))
+
+(defun hare--widget-value (widget)
+  "Like ‘widget-value’ but return nil if WIDGET is not a widget."
+  (when (widgetp widget)
+    (widget-value widget)))
 
 (defmacro hare--form-quit-button (label &rest body)
   "Insert a push button into the form.
@@ -966,6 +981,19 @@ The BODY is evaluated in an environment where the values
 			          (apply call-back arguments))))
                   ,@(when label (list label))))
 
+(defvar hare--form-horizontal-line (make-string 72 ?─)
+  "Horizontal line object.
+
+Candidates for horizontal line characters are ‘─’ (U+2500, box drawings
+light horizontal) and ‘━’ (U+2501, box drawings heavy horizontal).")
+
+(defun hare--form-horizontal-line ()
+  "Insert a horizontal line."
+  (cond ((stringp hare--form-horizontal-line)
+	 (insert hare--form-horizontal-line ?\n))
+	((characterp hare--form-horizontal-line)
+	 (insert (make-string (- (window-text-width) 2) hare--form-horizontal-line) ?\n))))
+
 (define-widget 'hare--path-widget 'const
   "A file name with optional VC state.
 Value is a ‘hare--path’ structure."
@@ -974,7 +1002,7 @@ Value is a ‘hare--path’ structure."
 
 (defvar hare--path-widget-directory-keymap
   (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map widget-keymap)
+    (set-keymap-parent map hare-form-mode-map)
     (define-key map "\r" 'hare--paths-widget-insert-subdir) ;RET
     (define-key map "\d" 'hare--paths-widget-remove-subdir) ;DEL
     (define-key map [mouse-2] 'hare--paths-widget-insert-subdir-event)
@@ -1375,6 +1403,8 @@ Return nil if no fileset can be determined."
     (define-key map (kbd "C-c C-f") 'hare--log-edit-widget-show-files)
     (define-key map (kbd "C-c C-a") 'hare--log-edit-widget-insert-changelog)
     (define-key map (kbd "C-c C-w") 'hare--log-edit-widget-generate-changelog-from-diff)
+    (define-key map (kbd "C-c C-k") 'hare-cancel-form)
+    (define-key map (kbd "C-c C-c") 'hare-submit-form)
     map)
   "Keymap for editing log messages in a form.")
 
