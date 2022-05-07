@@ -45,6 +45,7 @@
 (require 'wid-edit)
 (require 'cus-edit)
 (require 'shell)
+(require 'diff-mode)
 
 (defgroup hare nil
   "HareSVN is a TortoiseSVN clone for Dired buffers."
