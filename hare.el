@@ -1596,12 +1596,11 @@ The revision date is rounded up to the next time unit."
 	   :format "%t\n%h"
 	   :menu-tag "None"
 	   :doc "The revision is not specified.")
-	  (integer
+	  (natnum
 	   :value 1
 	   :format "%{%t%}: %v\n%h"
 	   :tag "Number"
 	   :size 10
-	   :valid-regexp "\\`[1-9][0-9]*\\'"
 	   :doc "The revision number.")
 	  (hare--svn-revision-date
 	   :format "%{%t%}: %v\n%h"
@@ -1648,12 +1647,11 @@ The revision date is rounded up to the next time unit."
 	     :format "%t\n%h"
 	     :menu-tag "None"
 	     :doc "The revision is not specified.")
-	    (integer
+	    (natnum
 	     :value 1
 	     :format "%{%t%}: %v\n%h"
 	     :tag "Number"
 	     :size 10
-	     :valid-regexp "\\`[1-9][0-9]*\\'"
 	     :doc "The revision number.")))
 	  (group
 	   :value (revision BASE nil)
