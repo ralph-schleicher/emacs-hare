@@ -1667,6 +1667,24 @@ The revision date is rounded up to the next time unit."
 	   (hare--svn-revision
 	    :tag "To Revision"))))
 
+(define-widget 'hare--svn-limit 'menu-choice
+  "A widget for selecting the number of log messages."
+  :value nil
+  :format "%t %[ Value Menu %]: %v"
+  :tag "Limit"
+  :help-echo "Specify the number of log messages"
+  :args `((const
+	   :value nil
+	   :format "%t\n%h"
+	   :menu-tag "None"
+	   :doc "The number of log messages is not specified.")
+	  (natnum
+	   :value 1
+	   :format "%{%t%}: %v\n%h"
+	   :tag "Number"
+	   :size 10
+	   :doc "The maximum number of log messages to process.")))
+
 (defun hare--create-svn-widget (type &rest options)
   "Insert a Subversion widget into the form.
 Return value is the widget handle."
@@ -1855,7 +1873,7 @@ Exclude the immediate target of the operation from the working copy.")))))))
   :abbrev-table nil
   :interactive nil)
 
-(defcustom hare-delete-process-window '(not svn-status)
+(defcustom hare-delete-process-window '(not svn-log svn-status)
   "Whether or not to delete the process window after an operation.
 This option only has an effect if the process succeeds.
 
@@ -2681,6 +2699,75 @@ only compare the file content."))
       (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
 
+(defun hare--svn-log (targets &rest options)
+  "Run the ‘svn log’ command.
+
+First argument TARGETS are the targets of the command.  Value is
+ either a list of file names or a HareSVN paths structure.
+Remaining arguments OPTIONS are keyword arguments.
+
+Return non-nil if the command succeeds."
+  (hare--with-process-window (buffer '(svn-log))
+    (apply #'hare--svn buffer 0 targets "log"
+	   (nconc (when-let ((revision (plist-get options :revision)))
+		    (list "--revision" (hare--string revision t)))
+		  (when-let ((change (plist-get options :change)))
+		    (list "--change" (hare--string change t)))
+		  (when (plist-get options :quiet)
+		    (list "--quiet"))
+		  (when (plist-get options :verbose)
+		    (list "--verbose"))
+		  (when (plist-get options :use-merge-history)
+		    (list "--use-merge-history"))
+		  (when (plist-get options :stop-on-copy)
+		    (list "--stop-on-copy"))
+		  (when-let ((limit (plist-get options :limit)))
+		    (list "--limit" (hare--string limit t)))
+		  (when-let ((search (plist-get options :search)))
+		    ;; TODO: Handle multiple search patterns.
+		    (list "--search" search))
+		  ()))))
+
+(defun hare-svn-log ()
+  "Display information about the history of files and directories."
+  (interactive)
+  (let ((paths (hare--svn-collect-paths)))
+    (hare--form (targets revision limit quiet verbose merge copy)
+	"Display information about the history of files and directories."
+	(apply #'hare--svn-log targets
+	       (nconc (cl-multiple-value-bind (first second third)
+			  (cl-values-list revision)
+			(cond ((and (eq first 'change) second)
+			       (list :change second))
+			      ((and (eq first 'revision) second)
+			       (list :revision (if (null third)
+						   (hare--string second t)
+						 (format "%s:%s" second third))))))
+		      (list :quiet quiet
+			    :verbose verbose
+			    :use-merge-history merge
+			    :stop-on-copy copy)))
+      (setq revision (widget-create 'hare--svn-revision-choice))
+      (insert ?\n)
+      (setq limit (widget-create 'hare--svn-limit))
+      (insert ?\n)
+      (setq quiet (hare--create-svn-widget 'checkbox
+		    :doc "Don't display the commit log messages."))
+      (insert ?\n)
+      (setq verbose (hare--create-svn-widget 'checkbox
+		      :doc "Display the affected files and directories, too."))
+      (insert ?\n)
+      (setq merge (hare--create-svn-widget 'checkbox
+		    :doc "Display additional information from the merge history."))
+      (insert ?\n)
+      (setq copy (hare--create-svn-widget 'checkbox
+		   :doc "Don't cross copies while traversing the history.
+If enabled, the listing stops if a file or directory was added due to
+a copy operation.  This can be useful for determining branch points."))
+      (hare--form-horizontal-line)
+      (setq targets (widget-create 'hare--paths-widget :value paths))
+      ())))
+
 (defun hare--svn-status (targets &rest options)
   "Run the ‘svn status’ command.
 
@@ -2832,6 +2919,9 @@ Also operate on externals defined by ‘svn:externals’ properties."))
     (bindings--define-key menu [hare-svn-status]
       '(menu-item "Status..." hare-svn-status
 		  :help "Display the status of working copy files and directories"))
+    (bindings--define-key menu [hare-svn-log]
+      '(menu-item "Log..." hare-svn-log
+		  :help "Display the history of files and directories"))
     (bindings--define-key menu [hare-svn-diff-revisions]
       '(menu-item "Diff..." hare-svn-diff-revisions
 		  :help "Display differences between two revisions"))
