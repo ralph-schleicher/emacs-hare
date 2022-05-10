@@ -1665,6 +1665,198 @@ The revision date is rounded up to the next time unit."
 	   (hare--svn-revision
 	    :tag "To Revision"))))
 
+(define-widget 'hare--svn-accept 'menu-choice
+  "A widget for selecting the conflict resolution action."
+  :value 'postpone
+  :format "%t %[ Value Menu %]: %v"
+  :tag "Conflict Resolution"
+  :help-echo "Define the action for automatic conflict resolution"
+  :args `((const
+	   :value postpone
+	   :format "%t\n%d"
+	   :menu-tag "Postpone"
+	   :doc "\
+Take no resolution action at all and instead allow the conflicts to be
+recorded for future resolution.")
+	  (const
+	   :value edit
+	   :format "%t\n%d"
+	   :menu-tag "Edit"
+	   :doc "\
+Open each conflicted file in a text editor for manual resolution of
+line-based conflicts.")
+	  (const
+	   :value launch
+	   :format "%t\n%d"
+	   :menu-tag "Launch"
+	   :doc "\
+Launch an interactive merge conflict resolution tool for each conflicted
+file.")
+	  (const
+	   :value base
+	   :format "%t\n%d"
+	   :menu-tag "Base"
+	   :doc "\
+Choose the file that was the (unmodified) ‘BASE’ revision before you
+tried to integrate changes from the server into your working copy.")
+	  (const
+	   :value working
+	   :format "%t\n%d"
+	   :menu-tag "Working"
+	   :doc "\
+Assuming that you've manually handled the conflict resolution, choose
+the version of the file as it currently stands in your working copy.")
+	  (const
+	   :value mine-full
+	   :format "%t\n%d"
+	   :menu-tag "Mine, Full"
+	   :doc "\
+Resolve conflicted files by preserving all local modifications and
+discarding all changes fetched from the server during the operation
+which caused the conflict.")
+	  (const
+	   :value theirs-full
+	   :format "%t\n%d"
+	   :menu-tag "Theirs, Full"
+	   :doc "\
+Resolve conflicted files by discarding all local modifications and
+integrating all changes fetched from the server during the operation
+which caused the conflict.")
+	  (const
+	   :value mine-conflict
+	   :format "%t\n%d"
+	   :menu-tag "Mine, Conflict"
+	   :doc "\
+Resolve conflicted files by preferring local modifications over the
+changes fetched from the server in conflicting regions of each file's
+content.")
+	  (const
+	   :value theirs-conflict
+	   :format "%t\n%d"
+	   :menu-tag "Theirs, Conflict"
+	   :doc "\
+Resolve conflicted files by preferring the changes fetched from the
+server over local modifications in conflicting regions of each file's
+content.")))
+
+(define-widget 'hare--svn-auto-props 'menu-choice
+  "A widget for selecting the automatic property assignment."
+  :value 'undefined
+  :format "%t %[ Value Menu %]: %v"
+  :tag "Automatic Property Assignment"
+  :help-echo "Override the runtime configuration directive for automatic property assignment"
+  :args `((const
+	   :value undefined
+	   :tag "not set"
+	   :format "%t\n%h"
+	   :menu-tag "Unset"
+	   :doc "Apply the runtime configuration setting.
+See the ‘enable-auto-props’ runtime configuration directive.")
+	  (const
+	   :value t
+	   :tag "enabled"
+	   :format "%t\n%h"
+	   :menu-tag "Enable"
+	   :doc "Enable automatic property assignment.
+Override the ‘enable-auto-props’ runtime configuration directive.")
+	  (const
+	   :value nil
+	   :tag "disabled"
+	   :format "%t\n%h"
+	   :menu-tag "Disable"
+	   :doc "Disable automatic property assignment.
+Override the ‘enable-auto-props’ runtime configuration directive.")))
+
+(define-widget 'hare--svn-depth 'menu-choice
+  "A widget for selecting the operational depth."
+  :value nil
+  :format "%t %[ Value Menu %]: %v"
+  :tag "Operational Depth"
+  :help-echo "Limit the scope of the operation"
+  :args `((const
+	   :value nil
+	   :format "%t\n%d"
+	   :menu-tag "None"
+	   :doc "\
+Apply the default behavior of the operation.")
+	  (const
+	   :value empty
+	   :format "%t\n%d"
+	   :menu-tag "Empty"
+	   :doc "\
+Include only the immediate target of the operation, not any of its file
+or directory children.")
+	  (const
+	   :value files
+	   :format "%t\n%d"
+	   :menu-tag "Files"
+	   :doc "\
+Include the immediate target of the operation and any of its immediate
+file children.")
+	  (const
+	   :value immediates
+	   :format "%t\n%d"
+	   :menu-tag "Immediates"
+	   :doc "\
+Include the immediate target of the operation and any of its immediate
+file or directory children.  The directory children will themselves be
+empty.")
+	  (const
+	   :value infinity
+	   :format "%t\n%d"
+	   :menu-tag "Infinity"
+	   :doc "\
+Include the immediate target of the operation, its file and directory
+children, its children's children, and so on to full recursion.")))
+
+(define-widget 'hare--svn-set-depth 'menu-choice
+  "A widget for setting the operational depth."
+  :value nil
+  :format "%t %[ Value Menu %]: %v"
+  :tag "Set Sticky Depth"
+  :help-echo "Change the scope (sticky depth) of a directory in the working copy"
+  :args `((const
+	   :value nil
+	   :format "%t\n%d"
+	   :menu-tag "None"
+	   :doc "\
+Don't change the scope (sticky depth) of a directory in the working copy.")
+	  (const
+	   :value empty
+	   :format "%t\n%d"
+	   :menu-tag "Empty"
+	   :doc "\
+Include only the immediate target of the operation, not any of its file
+or directory children.")
+	  (const
+	   :value files
+	   :format "%t\n%d"
+	   :menu-tag "Files"
+	   :doc "\
+Include the immediate target of the operation and any of its immediate
+file children.")
+	  (const
+	   :value immediates
+	   :format "%t\n%d"
+	   :menu-tag "Immediates"
+	   :doc "\
+Include the immediate target of the operation and any of its immediate
+file or directory children.  The directory children will themselves be
+empty.")
+	  (const
+	   :value infinity
+	   :format "%t\n%d"
+	   :menu-tag "Infinity"
+	   :doc "\
+Include the immediate target of the operation, its file and directory
+children, its children's children, and so on to full recursion.")
+	  (const
+	   :value exclude
+	   :format "%t\n%d"
+	   :menu-tag "Exclude"
+	   :doc "\
+Exclude the immediate target of the operation from the working copy.")))
+
 (define-widget 'hare--svn-limit 'menu-choice
   "A widget for selecting the number of log messages."
   :value nil
@@ -1689,159 +1881,21 @@ Return value is the widget handle."
   (declare (indent 1))
   ;; See https://svnbook.red-bean.com/en/1.7/svn.ref.svn.html.
   (cl-case type
+    (revision
+     (apply #'widget-create 'hare--svn-revision options))
+    (revision-choice
+     (apply #'widget-create 'hare--svn-revision-choice options))
     (accept
-     (apply #'widget-create 'menu-choice
-	    :value 'postpone
-	    :tag "Conflict Resolution"
-	    :format "%t %[ Value Menu %]: %v"
-	    :help-echo "Define the action for automatic conflict resolution"
-	    `((const
-	       :value postpone
-	       :format "%t\n%d"
-	       :menu-tag "Postpone"
-	       :doc "\
-Take no resolution action at all and instead allow the conflicts to be
-recorded for future resolution.")
-	      (const
-	       :value edit
-	       :format "%t\n%d"
-	       :menu-tag "Edit"
-	       :doc "\
-Open each conflicted file in a text editor for manual resolution of
-line-based conflicts.")
-	      (const
-	       :value launch
-	       :format "%t\n%d"
-	       :menu-tag "Launch"
-	       :doc "\
-Launch an interactive merge conflict resolution tool for each conflicted
-file.")
-	      (const
-	       :value base
-	       :format "%t\n%d"
-	       :menu-tag "Base"
-	       :doc "\
-Choose the file that was the (unmodified) ‘BASE’ revision before you
-tried to integrate changes from the server into your working copy.")
-	      (const
-	       :value working
-	       :format "%t\n%d"
-	       :menu-tag "Working"
-	       :doc "\
-Assuming that you've manually handled the conflict resolution, choose
-the version of the file as it currently stands in your working copy.")
-	      (const
-	       :value mine-full
-	       :format "%t\n%d"
-	       :menu-tag "Mine, Full"
-	       :doc "\
-Resolve conflicted files by preserving all local modifications and
-discarding all changes fetched from the server during the operation
-which caused the conflict.")
-	      (const
-	       :value theirs-full
-	       :format "%t\n%d"
-	       :menu-tag "Theirs, Full"
-	       :doc "\
-Resolve conflicted files by discarding all local modifications and
-integrating all changes fetched from the server during the operation
-which caused the conflict.")
-	      (const
-	       :value mine-conflict
-	       :format "%t\n%d"
-	       :menu-tag "Mine, Conflict"
-	       :doc "\
-Resolve conflicted files by preferring local modifications over the
-changes fetched from the server in conflicting regions of each file's
-content.")
-	      (const
-	       :value theirs-conflict
-	       :format "%t\n%d"
-	       :menu-tag "Theirs, Conflict"
-	       :doc "\
-Resolve conflicted files by preferring the changes fetched from the
-server over local modifications in conflicting regions of each file's
-content."))))
+     (apply #'widget-create 'hare--svn-accept options))
     (auto-props
-     (apply #'widget-create 'menu-choice
-	    :value 'undefined
-	    :tag "Automatic Property Assignment"
-	    :format "%t %[ Value Menu %]: %v"
-	    :help-echo "Override the runtime configuration directive for automatic property assignment"
-	    `((const
-	       :value undefined
-	       :tag "not set"
-	       :format "%t\n%h"
-	       :menu-tag "Unset"
-	       :doc "Apply the runtime configuration setting.
-See the ‘enable-auto-props’ runtime configuration directive.")
-	      (const
-	       :value t
-	       :tag "enabled"
-	       :format "%t\n%h"
-	       :menu-tag "Enable"
-	       :doc "Enable automatic property assignment.
-Override the ‘enable-auto-props’ runtime configuration directive.")
-	      (const
-	       :value nil
-	       :tag "disabled"
-	       :format "%t\n%h"
-	       :menu-tag "Disable"
-	       :doc "Disable automatic property assignment.
-Override the ‘enable-auto-props’ runtime configuration directive."))))
-    ((depth set-depth)
-     (let ((set-depth (eq type 'set-depth)))
-       ;; See https://svnbook.red-bean.com/en/1.7/svn.advanced.sparsedirs.html.
-       (apply #'widget-create 'menu-choice
-	      :tag (if set-depth "Set Sticky Depth" "Operational Depth")
-	      :value (plist-get options :value)
-	      :format "%t %[ Value Menu %]: %v"
-	      :help-echo (if set-depth
-			     "Change the scope (sticky depth) of a directory in the working copy"
-			   "Limit the scope of the operation")
-	      `((const
-		 :value nil
-		 :format "%t\n%d"
-		 :menu-tag "None"
-		 :doc ,(if set-depth
-			   "Don't change the scope (sticky depth) of a directory in the working copy."
-			 "Apply the default behavior of the operation."))
-		(const
-		 :value empty
-		 :format "%t\n%d"
-		 :menu-tag "Empty"
-		 :doc "\
-Include only the immediate target of the operation, not any of its file
-or directory children.")
-		(const
-		 :value files
-		 :format "%t\n%d"
-		 :menu-tag "Files"
-		 :doc "\
-Include the immediate target of the operation and any of its immediate
-file children.")
-		(const
-		 :value immediates
-		 :format "%t\n%d"
-		 :menu-tag "Immediates"
-		 :doc "\
-Include the immediate target of the operation and any of its immediate
-file or directory children.  The directory children will themselves be
-empty.")
-		(const
-		 :value infinity
-		 :format "%t\n%d"
-		 :menu-tag "Infinity"
-		 :doc "\
-Include the immediate target of the operation, its file and directory
-children, its children's children, and so on to full recursion.")
-		,@(when set-depth
-		    '((const
-		       :value exclude
-		       :format "%t\n%d"
-		       :menu-tag "Exclude"
-		       :doc "\
-Exclude the immediate target of the operation from the working copy.")))))))
+     (apply #'widget-create 'hare--svn-auto-props options))
+    (depth
+     ;; See https://svnbook.red-bean.com/en/1.7/svn.advanced.sparsedirs.html.
+     (apply #'widget-create 'hare--svn-depth options))
+    (set-depth
+     (apply #'widget-create 'hare--svn-set-depth options))
+    (limit
+     (apply #'widget-create 'hare--svn-limit options))
     ;; Generic widgets.
     (toggle
      ;; Should provide a :tag and optional :doc option.
@@ -2747,7 +2801,7 @@ Return non-nil if the command succeeds."
 			    :stop-on-copy copy)))
       (setq revision (widget-create 'hare--svn-revision-choice))
       (insert ?\n)
-      (setq limit (widget-create 'hare--svn-limit))
+      (setq limit (hare--create-svn-widget 'limit))
       (insert ?\n)
       (setq quiet (hare--create-svn-widget 'checkbox
 		    :doc "Don't display the commit log messages."))
