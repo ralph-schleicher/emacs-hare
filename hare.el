@@ -2050,6 +2050,66 @@ NUMERIC is non-nil, treat a character as a numeric type."
      (with-output-to-string
        (princ object)))))
 
+(defvar hare--preferences ()
+  "User preferences database.
+Value is an alist.  List elements are cons cells of the
+form ‘(SUBJECT . PREFERENCES)’ where SUBJECT is a symbol
+and PREFERENCES is a property list.")
+
+(defun hare--add-preferences (subject preferences &optional update)
+  "Add user preferences to the database.
+
+First argument SUBJECT is a symbol.
+Second argument PREFERENCES is a property list.
+If optional third argument UPDATE is non-nil,
+ update existing user preferences.
+
+Return value is the updated entry in the user preferences database."
+  (let ((cell (assq subject hare--preferences)))
+    (when (null cell)
+      (setq cell (list subject))
+      (push cell hare--preferences))
+    (while preferences
+      (let ((key (cl-first preferences))
+	    (value (cl-second preferences)))
+	(cond ((not (plist-member (cdr cell) key))
+	       (setcdr cell (cl-list* key value (cdr cell))))
+	      (update
+	       (plist-put (cdr cell) key value))))
+      (setq preferences (cddr preferences)))
+    cell))
+
+;;;###autoload
+(defun hare-set-preferences (subject &rest preferences)
+  "Set user preferences.
+
+First argument SUBJECT is a symbol.
+Remaining arguments PREFERENCES is a property list.
+
+For Subversion forms, SUBJECT describes the Subversion command,
+e.g. ‘svn-update’ for the ‘svn update’ command, and PREFERENCES is
+a property list where the keys are keywords equal to the Subversion
+command's command line options and the value is the default value
+for the option's corresponding widget in the form."
+  (cl-check-type subject symbol)
+  (unless (zerop (mod (length preferences) 2))
+    (error "Wrong number of arguments"))
+  (hare--add-preferences subject preferences t))
+
+(defun hare-get-preference (subject key &optional value)
+  "Fetch the value of a user preference.
+
+First argument SUBJECT is a symbol.
+Second argument KEY is the property name.
+Optional third argument VALUE is the return value
+ if the user preference is not set.
+
+Return value is the value of the user preference."
+  (if-let* ((cell (assq subject hare--preferences))
+	    (tail (plist-member (cdr cell) key)))
+      (cl-second tail)
+    value))
+
 ;;;; Subversion
 
 (defun hare--svn-collect-paths (&rest options)
@@ -2219,15 +2279,18 @@ Return non-nil if the command succeeds."
 			  :no-unlock no-unlock
 			  :include-externals externals)
       (setq no-unlock (hare--create-svn-widget 'checkbox
+			:value (hare-get-preference 'svn-commit :no-unlock)
 			:doc "Don't unlock targets.
 The default is to unlock any locked target after a successful commit."))
       (insert ?\n)
       (setq externals (hare--create-svn-widget 'checkbox
+			:value (hare-get-preference 'svn-commit :include-externals)
 			:doc "Include external definitions.
 Also operate on externals defined by ‘svn:externals’ properties.
 Don't commit externals with a fixed revision."))
       (insert ?\n)
-      (setq depth (hare--create-svn-widget 'depth :value 'empty))
+      (setq depth (hare--create-svn-widget 'depth
+		    :value (hare-get-preference 'svn-commit :depth 'empty)))
       (hare--form-horizontal-line)
       (setq targets (widget-create 'hare--paths-widget :value paths))
       (hare--form-horizontal-line)
@@ -2282,9 +2345,11 @@ repository."
 			  :ignore-externals externals)
       (setq revision (widget-create 'hare--svn-revision))
       (insert ?\n)
-      (setq accept (hare--create-svn-widget 'accept))
+      (setq accept (hare--create-svn-widget 'accept
+		     :value (hare-get-preference 'svn-update :accept 'postpone)))
       (insert ?\n)
       (setq force (hare--create-svn-widget 'checkbox
+		    :value (hare-get-preference 'svn-update :force t)
 		    :doc "Handle unversioned obstructions as changes.
 If enabled, unversioned paths in the working copy do not automatically
 cause a failure if the update attempts to add the same path.  If the
@@ -2294,25 +2359,27 @@ the working copy.  This means that an obstructing directory's unversioned
 children may also obstruct and become versioned.  For files, any content
 differences between the obstruction and the repository are treated like
 a local modification to the working copy.  All properties from the
-repository are applied to the obstructing path."
-		    :value t))
+repository are applied to the obstructing path."))
       (insert ?\n)
       (setq parents (hare--create-svn-widget 'checkbox
+		      :value (hare-get-preference 'svn-update :parents t)
 		      :doc "Create intermediate directories.
 If a target is missing in the working copy but its immediate parent
 directory is present, checkout the target into its parent directory
 at the specified depth.  If this option is enabled, create any missing
 parent directories of the target by checking them out at depth ‘empty’,
-too."
-		      :value t))
+too."))
       (insert ?\n)
       (setq externals (hare--create-svn-widget 'checkbox
+			:value (hare-get-preference 'svn-update :ignore-externals)
 			:doc "Ignore external definitions.
 Don't operate on externals defined by ‘svn:externals’ properties."))
       (insert ?\n)
-      (setq set-depth (hare--create-svn-widget 'set-depth))
+      (setq set-depth (hare--create-svn-widget 'set-depth
+			:value (hare-get-preference 'svn-update :set-depth)))
       (insert ?\n)
-      (setq depth (hare--create-svn-widget 'depth))
+      (setq depth (hare--create-svn-widget 'depth
+		    :value (hare-get-preference 'svn-update :depth)))
       (hare--form-horizontal-line)
       (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
@@ -2345,9 +2412,10 @@ Return non-nil if the command succeeds."
 			   :depth depth
 			   :accept accept)
       (setq accept (hare--create-svn-widget 'accept
-		     :value 'working))
+		     :value (hare-get-preference 'svn-resolve :accept 'working)))
       (insert ?\n)
-      (setq depth (hare--create-svn-widget 'depth :value 'empty))
+      (setq depth (hare--create-svn-widget 'depth
+		    :value (hare-get-preference 'svn-resolve :depth 'empty)))
       (hare--form-horizontal-line)
       (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
@@ -2394,26 +2462,36 @@ Return non-nil if the command succeeds."
 		       :force force
 		       :parents parents)
       (setq no-ignore (hare--create-svn-widget 'checkbox
+			:value (hare-get-preference 'svn-add :no-ignore)
 			:doc "Don't apply ignore rules to implicitly added items.
 Subversion uses ignore patterns to determine which items should be
 skipped as part of a larger recursive operation.  If this option is
 enabled, operate on all the files and directories present."))
       (insert ?\n)
-      (setq auto-props (hare--create-svn-widget 'auto-props))
+      (setq auto-props (hare--create-svn-widget 'auto-props
+			 :value (cond ((and (hare-get-preference 'svn-add :auto-props)
+					    (not (hare-get-preference 'svn-add :no-auto-props)))
+				       t)
+				      ((and (hare-get-preference 'svn-add :no-auto-props)
+					    (not (hare-get-preference 'svn-add :auto-props)))
+				       nil)
+				      (t
+				       'undefined))))
       (insert ?\n)
       (setq force (hare--create-svn-widget 'checkbox
+		    :value (hare-get-preference 'svn-add :force t)
 		    :doc "Ignore already versioned paths.
 If this option is enabled, add all the unversioned paths and ignore
-the rest.  Otherwise, error out if a path is already versioned."
-		    :value t))
+the rest.  Otherwise, error out if a path is already versioned."))
       (insert ?\n)
       (setq parents (hare--create-svn-widget 'checkbox
+		      :value (hare-get-preference 'svn-add :parents t)
 		      :doc "Add intermediate directories.
 If this option is enabled, add any missing parent directories of the
-target at depth ‘empty’, too."
-		      :value t))
+target at depth ‘empty’, too."))
       (insert ?\n)
-      (setq depth (hare--create-svn-widget 'depth :value 'empty))
+      (setq depth (hare--create-svn-widget 'depth
+		    :value (hare-get-preference 'svn-add :depth 'empty)))
       (hare--form-horizontal-line)
       (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
@@ -2455,6 +2533,7 @@ The actual removal occurs upon the next commit."
 			  :force force
 			  :keep-local t) ;schedule for removal
       (setq force (hare--create-svn-widget 'checkbox
+		    :value (hare-get-preference 'svn-delete :force)
 		    :doc "Remove modified files and directories.
 If enabled, files and directories are removed regardless of their
 version control state.  Otherwise, modified items are not removed."))
@@ -2488,7 +2567,8 @@ Return non-nil if the command succeeds."
 	"Undo local modifications."
 	(hare--svn-revert targets
 			  :depth depth)
-      (setq depth (hare--create-svn-widget 'depth :value 'empty))
+      (setq depth (hare--create-svn-widget 'depth
+		    :value (hare-get-preference 'svn-revert :depth 'empty)))
       (hare--form-horizontal-line)
       (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
@@ -2646,7 +2726,13 @@ Return non-nil if the command succeeds."
       (setq revision (widget-create 'hare--svn-revision-choice))
       (insert ?\n)
       (setq properties (apply #'widget-create 'menu-choice
-			      :value nil
+			      :value (cond ((and (hare-get-preference 'svn-diff :ignore-properties)
+						 (hare-get-preference 'svn-diff :properties-only))
+					    nil)
+					   ((hare-get-preference 'svn-diff :ignore-properties)
+					    'ignore)
+					   ((hare-get-preference 'svn-diff :properties-only)
+					    'only))
 			      :format "%t %[ Value Menu %]: %v"
 			      :tag "Properties"
 			      :help-echo "Define how to handle changes in properties"
@@ -2667,7 +2753,10 @@ Return non-nil if the command succeeds."
 				 :doc "Only operate on properties; don't compare file content."))))
       (insert ?\n)
       (setq whitespace (apply #'widget-create 'menu-choice
-			      :value nil
+			      :value (cond ((hare-get-preference 'svn-diff :ignore-all-space)
+					    "-w")
+					   ((hare-get-preference 'svn-diff :ignore-space-change)
+					    "-b"))
 			      :format "%t %[ Value Menu %]: %v"
 			      :tag "Whitespace"
 			      :help-echo "Define how to handle changes in whitespace"
@@ -2693,35 +2782,48 @@ If enabled, ignore differences even if one line has whitespace where
 the other line has none."))))
       (insert ?\n)
       (setq newline (hare--create-svn-widget 'checkbox
+		      :value (hare-get-preference 'svn-diff :ignore-eol-style)
 		      :doc "Ignore differences in end of line style."))
       (insert ?\n)
       (setq added (hare--create-svn-widget 'checkbox
+		    :value (hare-get-preference 'svn-diff :no-diff-added t)
 		    :doc "Don't display differences for added files.
 If enabled, do not display differences for added files.  Otherwise,
 an added file is displayed as if you had added all of its content
-to an empty file."
-		    :value t))
+to an empty file."))
       (insert ?\n)
       (setq deleted (hare--create-svn-widget 'checkbox
+		      :value (hare-get-preference 'svn-diff :no-diff-deleted t)
 		      :doc "Don't display differences for deleted files.
 If enabled, do not display differences for deleted files.  Otherwise,
-a deleted file is displayed as if you had deleted all of its content."
-		      :value t))
+a deleted file is displayed as if you had deleted all of its content."))
       (insert ?\n)
       (setq copied (hare--create-svn-widget 'checkbox
+		     :value (hare-get-preference 'svn-diff :show-copies-as-adds)
 		     :doc "Don't compare copied or moved files with their source files.
 If enabled, treat copied or moved files like added files.  Otherwise,
 a copied or moved file is compared against the file from which the
 copy was created."))
       (insert ?\n)
       (setq ancestry (hare--create-svn-widget 'checkbox
+		       :value (hare-get-preference 'svn-diff :notice-ancestry)
 		       :doc "Pay attention to ancestry when calculating differences.
 If enabled, treat a file with identical content but different ancestry
 as if it has been deleted and added again.  The default behavior is to
 only compare the file content."))
       (insert ?\n)
       (setq output-format (apply #'widget-create 'menu-choice
-				 :value nil
+				 :value (cond ((< 1 (cl-count-if-not
+						     #'null (list (hare-get-preference 'svn-diff :patch-compatible)
+								  (hare-get-preference 'svn-diff :git)
+								  (hare-get-preference 'svn-diff :summarize))))
+					       nil)
+					      ((hare-get-preference 'svn-diff :patch-compatible)
+					       'patch)
+					      ((hare-get-preference 'svn-diff :git)
+					       'git)
+					      ((hare-get-preference 'svn-diff :summarize)
+					       'summary))
 				 :format "%t %[ Value Menu %]: %v"
 				 :tag "Output Format"
 				 :help-echo "Define the output format"
@@ -2746,7 +2848,8 @@ only compare the file content."))
 				    :menu-tag "Summary"
 				    :doc "Display only high-level status changes."))))
       (insert ?\n)
-      (setq depth (hare--create-svn-widget 'depth :value 'infinity))
+      (setq depth (hare--create-svn-widget 'depth
+		    :value (hare-get-preference 'svn-diff :depth 'infinity)))
       (hare--form-horizontal-line)
       (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
@@ -2801,18 +2904,23 @@ Return non-nil if the command succeeds."
 			    :stop-on-copy copy)))
       (setq revision (widget-create 'hare--svn-revision-choice))
       (insert ?\n)
-      (setq limit (hare--create-svn-widget 'limit))
+      (setq limit (hare--create-svn-widget 'limit
+		    :value (hare-get-preference 'svn-log :limit)))
       (insert ?\n)
       (setq quiet (hare--create-svn-widget 'checkbox
+		    :value (hare-get-preference 'svn-log :quiet)
 		    :doc "Don't display the commit log messages."))
       (insert ?\n)
       (setq verbose (hare--create-svn-widget 'checkbox
+		      :value (hare-get-preference 'svn-log :verbose)
 		      :doc "Display the affected files and directories, too."))
       (insert ?\n)
       (setq merge (hare--create-svn-widget 'checkbox
+		    :value (hare-get-preference 'svn-log :use-merge-history)
 		    :doc "Display additional information from the merge history."))
       (insert ?\n)
       (setq copy (hare--create-svn-widget 'checkbox
+		   :value (hare-get-preference 'svn-log :stop-on-copy)
 		   :doc "Don't cross copies while traversing the history.
 If enabled, the listing stops if a file or directory was added due to
 a copy operation.  This can be useful for determining branch points."))
@@ -2863,25 +2971,31 @@ Return non-nil if the command succeeds."
       (setq revision (widget-create 'hare--svn-revision))
       (insert ?\n)
       (setq quiet (hare--create-svn-widget 'checkbox
+		    :value (hare-get-preference 'svn-status :quiet)
 		    :doc "Display only summary information about locally modified items."))
       (insert ?\n)
       (setq updates (hare--create-svn-widget 'checkbox
+		      :value (hare-get-preference 'svn-status :show-updates)
 		      :doc "Display working copy revision and server out-of-date information."))
       (insert ?\n)
       (setq verbose (hare--create-svn-widget 'checkbox
+		      :value (hare-get-preference 'svn-status :verbose)
 		      :doc "Display full revision information on every item."))
       (insert ?\n)
       (setq no-ignore (hare--create-svn-widget 'checkbox
+			:value (hare-get-preference 'svn-status :no-ignore)
 			:doc "Don't apply ignore rules to implicitly visited items.
 Subversion uses ignore patterns to determine which items should be
 skipped as part of a larger recursive operation.  If this option is
 enabled, operate on all the files and directories present."))
       (insert ?\n)
       (setq externals (hare--create-svn-widget 'checkbox
+			:value (hare-get-preference 'svn-status :ignore-externals)
 			:doc "Ignore external definitions.
 Don't operate on externals defined by ‘svn:externals’ properties."))
       (insert ?\n)
-      (setq depth (hare--create-svn-widget 'depth :value 'infinity))
+      (setq depth (hare--create-svn-widget 'depth
+		    :value (hare-get-preference 'svn-status :depth 'infinity)))
       (hare--form-horizontal-line)
       (setq targets (widget-create 'hare--paths-widget :value paths))
       ())))
@@ -2939,22 +3053,26 @@ Return non-nil if the command succeeds."
 			   :vacuum-pristines vacuum
 			   :include-externals externals)
       (setq cleanup (hare--create-svn-widget 'checkbox
+		      :value (hare-get-preference 'svn-cleanup :cleanup t)
 		      :doc "Clean up working copy status.
 Remove all write locks (shown as ‘L’ by the ‘svn status’ command) from
 the working copy.  Usually, this is only necessary if a Subversion client
-has crashed while using the working copy, leaving it in an unusable state."
-		      :value t))
+has crashed while using the working copy, leaving it in an unusable state."))
       (insert ?\n)
       (setq unversioned (hare--create-svn-widget 'checkbox
+			  :value (hare-get-preference 'svn-cleanup :remove-unversioned)
 			  :doc "Remove unversioned files and directories."))
       (insert ?\n)
       (setq ignored (hare--create-svn-widget 'checkbox
+		      :value (hare-get-preference 'svn-cleanup :remove-ignored)
 		      :doc "Remove ignored files and directories."))
       (insert ?\n)
       (setq vacuum (hare--create-svn-widget 'checkbox
+		     :value (hare-get-preference 'svn-cleanup :vacuum-pristines)
 		     :doc "Remove unreferenced original files from ‘.svn’ directory."))
       (insert ?\n)
       (setq externals (hare--create-svn-widget 'checkbox
+			:value (hare-get-preference 'svn-cleanup :include-externals)
 			:doc "Include external definitions.
 Also operate on externals defined by ‘svn:externals’ properties."))
       (hare--form-horizontal-line)
