@@ -28,7 +28,7 @@ The HareSVN context menu shall provide the following commands.
 - [ ] release lock
 - [X] --
 - [X] diff
-- [ ] show log
+- [X] show log
 - [X] check for mod
 - [X] --
 - [ ] branch/tag
@@ -42,6 +42,9 @@ The HareSVN context menu shall provide the following commands.
 Subversion commands are invoked via descriptive dialogs.
 
 [[./doc/svn-update-form.png]]
+
+You can of course customize the default values of the widgets for
+every Subversion command individually.
 
 ** Command Execution
 The process buffer captures information about the executed version
