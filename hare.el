@@ -949,6 +949,13 @@ initialized as follows.
        (widget-move 2)
        ())))
 
+(defvar hare--widget-complete-keymap
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map hare-form-mode-map)
+    (define-key map "\t" 'widget-complete)
+    map)
+  "Widget keymap with tab completion.")
+
 (defun hare--widget-value (widget)
   "Like ‘widget-value’ but return nil if WIDGET is not a widget."
   (when (widgetp widget)
@@ -2133,7 +2140,8 @@ Second argument SUCCESS is the process status indicating a successful
  command execution.
 Third argument TARGETS are the targets for the Subversion command.
  Value is either a list of absolute file names or a HareSVN paths
- structure.
+ structure.  For the ‘svn move’ command, value is a cons cell of
+ the form ‘(SOURCES . DESTINATION)’.
 Fourth argument COMMAND is the Subversion command to be executed.
 Remaining arguments OPTIONS are any additional command line options.
 
@@ -2142,10 +2150,14 @@ Return non-nil if the command succeeds."
     (error "User option ‘vc-svn-global-switches’ is not a list, please fix it"))
   (let ((came-from (current-buffer))
 	(buffer-options ())
+	(destination nil)
 	(status nil))
     (when (consp buffer)
       (setq buffer-options (cdr buffer)
 	    buffer (car buffer)))
+    (cond ((string-equal command "move")
+	   (setq destination (cdr targets)
+		 targets (car targets))))
     (save-selected-window
       (with-current-buffer buffer
 	(let ((inhibit-read-only t)
@@ -2185,7 +2197,13 @@ Return non-nil if the command succeeds."
 					 ((listp targets)
 					  (mapcar #'expand-file-name targets))
 					 ((stringp targets)
-					  (list (expand-file-name targets)))))))
+					  (list (expand-file-name targets))))
+				   (when (stringp destination)
+				     (list (if (hare--paths-p targets)
+					       (file-relative-name
+						(expand-file-name destination)
+						(hare--paths-parent targets))
+					     (expand-file-name destination)))))))
 	    ;; Show the command line.
 	    (insert (comint-quote-filename vc-svn-program))
 	    (dolist (argument arguments)
@@ -2494,6 +2512,64 @@ target at depth ‘empty’, too."))
 		    :value (hare-get-preference 'svn-add :depth 'empty)))
       (hare--form-horizontal-line)
       (setq targets (widget-create 'hare--paths-widget :value paths))
+      ())))
+
+(defun hare--svn-move (sources destination &rest options)
+  "Run the ‘svn move’ command.
+
+First argument SOURCES are the sources of the command.  Value is
+ either a list of file names or a HareSVN paths structure.
+Second argument DESTINATION is the destination.  Value is a file
+ or directory name.
+Remaining arguments OPTIONS are keyword arguments.
+
+Return non-nil if the command succeeds."
+  (let ((message (plist-get options :message)))
+    (hare--with-log-message-file (file message)
+      (hare--with-process-window (buffer '(svn-move))
+	(apply #'hare--svn buffer 0 (cons sources destination) "move"
+	       (nconc (when (not (null message))
+			(list "--file" file "--force-log"))
+		      (when (plist-get options :quiet)
+			(list "--quiet"))
+		      (when (plist-get options :force)
+			(list "--force"))
+		      (when (plist-get options :parents)
+			(list "--parents"))
+		      ()))))))
+
+(defun hare-svn-move (&optional arg)
+  "Move (rename) files and directories in the working copy."
+  (interactive "P")
+  (let ((paths (hare--svn-collect-paths)))
+    (hare--form (sources destination force parents)
+	"Move (rename) files and directories in the working copy."
+	(hare--svn-move sources destination
+			:force force
+			:parents parents)
+      (setq force (hare--create-svn-widget 'checkbox
+		    :value (hare-get-preference 'svn-move :force)
+		    :doc "Move modified files and directories.
+If enabled, files and directories are moved regardless of their
+version control state.  Otherwise, modified items are not moved."))
+      (insert ?\n)
+      (setq parents (hare--create-svn-widget 'checkbox
+		      :value (hare-get-preference 'svn-move :parents t)
+		      :doc "Create and add intermediate directories.
+If this option is enabled, create and add any non-existing or
+unversioned parent directories of the target at depth ‘empty’,
+too."))
+      (insert ?\n)
+      (setq destination (widget-create 'file
+				       :tag "Destination"
+				       :value (abbreviate-file-name
+					       (if (cdr (hare--paths-children paths))
+						   (hare--paths-parent paths)
+						 (hare--path-absolute
+						  (car (hare--paths-children paths)))))
+				       :keymap hare--widget-complete-keymap))
+      (hare--form-horizontal-line)
+      (setq sources (widget-create 'hare--paths-widget :value paths))
       ())))
 
 (defun hare--svn-delete (targets &rest options)
@@ -3106,6 +3182,9 @@ Also operate on externals defined by ‘svn:externals’ properties."))
     (bindings--define-key menu [hare-svn-delete]
       '(menu-item "Delete..." hare-svn-delete
 		  :help "Remove files and directories from version control"))
+    (bindings--define-key menu [hare-svn-move]
+      '(menu-item "Move..." hare-svn-move
+		  :help "Move (rename) files and directories in the working copy"))
     (bindings--define-key menu [hare-svn-add]
       '(menu-item "Add..." hare-svn-add
 		  :help "Put files and directories under version control"))
