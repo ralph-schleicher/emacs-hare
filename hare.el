@@ -352,13 +352,45 @@ lines."
 				     font-lock-face ,dired-header-face)))
 	    (goto-char limit))))
       ;; Insert the HareSVN icons.
-      (while (not (eobp))
-	(when (dired-move-to-filename)
-	  (let* ((file (dired-get-filename nil t))
-      		 (state (and file vc-dir-backend (hare--vc-state file vc-dir-backend))))
-	    (hare--insert-icon state `(keymap ,hare--dired-icon-keymap))
-	    (insert ?\s)))
-	(forward-line 1)))))
+      (let (moved-alist moved)
+	(while (not (eobp))
+	  (when (dired-move-to-filename)
+	    (let* ((file (dired-get-filename nil t))
+		   (state (and file vc-dir-backend (hare--vc-state file vc-dir-backend))))
+	      (hare--insert-icon state `(keymap ,hare--dired-icon-keymap))
+	      (insert ?\s)
+	      ;; Handle moved or renamed items.
+	      (when-let ((dir (and file (file-name-directory (directory-file-name file)))))
+		(if-let ((cell (cl-assoc dir moved-alist :test #'hare--file-name-equal)))
+		    (setq moved (cdr cell))
+		  (setq moved (hare--collect-moved-items dir vc-dir-backend))
+		  (push (cons dir moved) moved-alist))
+		(when-let* ((cell (cl-assoc file moved :test #'hare--file-name-equal))
+			    (from (cdr cell))
+			    (pos (save-excursion
+				   (dired-move-to-end-of-filename)
+				   (point))))
+		  ;; Save origin of moved item and visualize it as a
+		  ;; reverse symlink.
+		  (put-text-property (point) pos
+				     'hare-moved-from from)
+		  (goto-char pos)
+		  (insert " <- " (file-relative-name from dir))
+		  (put-text-property pos (point)
+				     'font-lock-face dired-symlink-face)
+		  ()))))
+	  (forward-line 1))))))
+
+(defun hare--dired-get-filename (&optional localp no-error-if-not-filep)
+  "Like ‘dired-get-filename’ but return a list with two elements if
+the Dired entry has the ‘hare-moved-from’ text property set, i.e.
+the first list element is the return value of ‘dired-get-filename’
+and the second list element is the value of the ‘hare-moved-from’
+text property."
+  (when-let ((file-name (dired-get-filename localp no-error-if-not-filep)))
+    (if-let ((moved-from (get-text-property (save-excursion (dired-move-to-filename)) 'hare-moved-from)))
+	(list file-name moved-from)
+      file-name)))
 
 ;;;###autoload
 (define-minor-mode hare-dired-mode
@@ -418,6 +450,65 @@ the variable ‘hare--file-name-ignore-case’."
 			      (hare--expand-file-name relative directory)))
 			  (directory-files directory nil directory-files-no-dot-files-regexp t)))
 	#'hare--file-name-lessp))
+
+(defun hare--collect-moved-items (directory vc-backend)
+  "Gather information about moved items in DIRECTORY.
+Second argument VC-BACKEND defines the VC backend.
+
+Value is an alist with cons cells of the form ‘(TO . FROM)’
+where TO is an item in DIRECTORY and FROM is the source item
+of TO."
+  (let (moved)
+    (cl-case vc-backend
+      (SVN
+       (with-temp-buffer
+	 ;; The output of ‘svn status’ is only reliable if you
+	 ;; examine it relative to the respective directory.
+	 ;;
+	 ;; $ svn status -v .
+	 ;; D               19       19 ralph        foo.txt
+	 ;;         > moved to subdir/foo.txt
+	 ;;                 18       18 ralph        subdir
+	 ;; A  +             -       19 ralph        subdir/foo.txt
+	 ;;         > moved from first.txt
+	 ;;
+	 ;; $ svn status -v subdir
+	 ;;                 18       18 ralph        subdir
+	 ;; A  +             -       19 ralph        subdir/foo.txt
+	 ;;         > moved from ../foo.txt
+	 ;;
+	 ;; $ cd subdir
+	 ;; $ svn status -v .
+	 ;;                 18       18 ralph        .
+	 ;; A  +             -       19 ralph        foo.txt
+	 ;;         > moved from ../foo.txt
+	 (let ((status (ignore-errors
+      			 (cd directory) ;sets ‘default-directory’
+			 (call-process vc-svn-program nil (list (current-buffer) t) nil
+				       "status"
+				       "--verbose"
+				       "--depth" "immediates"
+				       "."))))
+	   (when (and (integerp status) (= status 0))
+	     (goto-char (point-min))
+	     (while (re-search-forward
+		     "^\\(?:\\?\\|[ ACDGIMR!~][ MC][ L][ +][ SX]..\\([ *]\\) +\\([-0-9?]+\\) +\\([0-9?]+\\) +\\([^ ]+\\)\\) +" nil t)
+	       (let ((beg (line-beginning-position)))
+		 (when (and (= ?A (char-after (+ beg 0)))
+			    (= ?+ (char-after (+ beg 3))))
+		   (let ((to (buffer-substring-no-properties
+			      (point) (line-end-position)))
+			 (from (save-excursion
+				 (forward-line 1)
+				 (when (looking-at " +> moved from ")
+				   (goto-char (match-end 0))
+				   (buffer-substring-no-properties
+				    (point) (line-end-position))))))
+		     (when (and to from)
+		       (push (cons (expand-file-name to)
+				   (expand-file-name from))
+			     moved)))))))))))
+    moved))
 
 (cl-defstruct (hare--path
 	       (:constructor nil)
